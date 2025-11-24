@@ -27,19 +27,20 @@ export default class Request implements RequestInterface {
     private query;
     private bodyData;
     constructor(config: RequestConfig);
-    setPath(path: string): RequestInterface;
-    setHost(host: string): RequestInterface;
+    private normalizePath;
+    setPath(path: string): this;
+    setHost(host: string): this;
     getHeaders(): RequestHeaders;
-    setHeaders(headers: RequestHeaders): RequestInterface;
-    addHeaders(headers: RequestHeaders): RequestInterface;
+    setHeaders(headers: RequestHeaders): this;
+    addHeaders(headers: RequestHeaders): this;
     getQuery(): RequestQuery;
-    setQuery(query: RequestQuery): RequestInterface;
-    addQuery(query: RequestQuery): RequestInterface;
+    setQuery(query: RequestQuery): this;
+    addQuery(query: RequestQuery): this;
     getQueryAsString(): string;
     getBodyData(): RequestBodyData;
     getBodyDataString(): string;
-    setBodyData(bodyData: RequestBodyData): RequestInterface;
-    addBodyData(bodyData: RequestBodyData): RequestInterface;
+    setBodyData(bodyData: RequestBodyData): this;
+    addBodyData(bodyData: RequestBodyData): this;
     getURI(): string;
     getURL(): string;
 }
@@ -58,19 +59,19 @@ export default class Request implements RequestInterface {
 export declare class PreparedRequest implements RequestInterface {
     private request;
     constructor(baseUrl: string);
-    setPath(path: string): RequestInterface;
-    setHost(host: string): RequestInterface;
+    setPath(path: string): this;
+    setHost(host: string): this;
     getHeaders(): RequestHeaders;
-    setHeaders(headers: RequestHeaders): RequestInterface;
-    addHeaders(headers: RequestHeaders): RequestInterface;
+    setHeaders(headers: RequestHeaders): this;
+    addHeaders(headers: RequestHeaders): this;
     getQuery(): RequestQuery;
-    setQuery(query: RequestQuery): RequestInterface;
-    addQuery(query: RequestQuery): RequestInterface;
+    setQuery(query: RequestQuery): this;
+    addQuery(query: RequestQuery): this;
     getQueryAsString(): string;
     getBodyData(): RequestBodyData;
     getBodyDataString(): string;
-    setBodyData(bodyData: RequestBodyData): RequestInterface;
-    addBodyData(bodyData: RequestBodyData): RequestInterface;
+    setBodyData(bodyData: RequestBodyData): this;
+    addBodyData(bodyData: RequestBodyData): this;
     getURI(): string;
     getURL(): string;
 }

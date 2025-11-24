@@ -97,7 +97,7 @@ class UrlExtractor {
      * ```
      */
     extractId(url, entity, platform, castNumbers = true) {
-        const patterns = this.patterns[platform]?.filter(p => p.entity === entity);
+        const patterns = this.patterns[platform]?.filter((p) => p.entity === entity);
         if (!patterns?.length)
             throw new Error(`No patterns registered for "${entity}" on platform "${platform}"`);
         for (const pattern of patterns) {

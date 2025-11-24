@@ -1,6 +1,6 @@
 import { CookieJar } from "tough-cookie";
 import { type RateLimiterConfig } from "./RateLimiter";
-import { ResponseType } from '../../Types';
+import { ResponseType } from "../../Types";
 /**
  * Custom error classes for better error handling
  */

@@ -147,7 +147,9 @@ class HttpClientImproved {
             maxRetries: this.options.maxRetries ?? 3,
             baseDelay: this.options.retryOptions?.baseDelay ?? 1000,
             maxDelay: this.options.retryOptions?.maxDelay ?? 30000,
-            retryStatusCodes: this.options.retryOptions?.retryStatusCodes ?? [408, 429, 500, 502, 503, 504],
+            retryStatusCodes: this.options.retryOptions?.retryStatusCodes ?? [
+                408, 429, 500, 502, 503, 504,
+            ],
             jitter: this.options.retryOptions?.jitter ?? true,
         };
         // Set default headers
@@ -204,7 +206,7 @@ class HttpClientImproved {
      * Decompresses response body based on content encoding
      * @private
      */
-    async decompress(buf, enc, charset = 'utf-8') {
+    async decompress(buf, enc, charset = "utf-8") {
         if (!enc)
             return buf.toString(charset);
         try {
@@ -230,7 +232,9 @@ class HttpClientImproved {
      */
     calcDelay(attempt) {
         const base = Math.min(this.retryOptions.baseDelay * 2 ** attempt, this.retryOptions.maxDelay);
-        return this.retryOptions.jitter ? base * (0.75 + Math.random() * 0.5) : base;
+        return this.retryOptions.jitter
+            ? base * (0.75 + Math.random() * 0.5)
+            : base;
     }
     /**
      * Utility method for sleeping
@@ -302,11 +306,14 @@ class HttpClientImproved {
                         url: finalConfig.url,
                     });
                     // Handle redirects
-                    if (this.options.followRedirects && [301, 302, 303, 307, 308].includes(response.status)) {
+                    if (this.options.followRedirects &&
+                        [301, 302, 303, 307, 308].includes(response.status)) {
                         if (redirects < (this.options.maxRedirects ?? 5)) {
                             const location = response.headers.location;
                             if (location) {
-                                this.log("debug", `Redirecting to ${location}`, { originalUrl: finalConfig.url });
+                                this.log("debug", `Redirecting to ${location}`, {
+                                    originalUrl: finalConfig.url,
+                                });
                                 const redirectMethod = response.status === 303 ? "GET" : method;
                                 return this.sendWithRetry(redirectMethod, location, headers, response.status === 303 ? undefined : body, redirects + 1);
                             }
@@ -327,7 +334,7 @@ class HttpClientImproved {
                 }
                 catch (timeoutErr) {
                     clearTimeout(timer);
-                    if (timeoutErr.name === 'AbortError') {
+                    if (timeoutErr.name === "AbortError") {
                         throw new TimeoutError(url, timeout);
                     }
                     throw timeoutErr;
@@ -355,10 +362,13 @@ class HttpClientImproved {
      */
     parseContentType(contentType) {
         if (!contentType)
-            return { type: 'text/plain', charset: 'utf-8' };
-        const parts = contentType.split(';');
+            return { type: "text/plain", charset: "utf-8" };
+        const parts = contentType.split(";");
         const type = parts[0].trim();
-        const rawCharset = parts.find(p => p.includes('charset'))?.split('=')[1]?.trim() || 'utf-8';
+        const rawCharset = parts
+            .find((p) => p.includes("charset"))
+            ?.split("=")[1]
+            ?.trim() || "utf-8";
         const charset = rawCharset;
         return { type, charset };
     }
@@ -392,7 +402,10 @@ class HttpClientImproved {
             }
         }
         catch (error) {
-            this.log("error", "Failed to parse response", { error, status: res.status });
+            this.log("error", "Failed to parse response", {
+                error,
+                status: res.status,
+            });
             throw new HttpClientError(`Response parsing failed: ${error instanceof Error ? error.message : String(error)}`, res.status);
         }
     }
@@ -456,7 +469,10 @@ class HttpClientImproved {
                     const res = await this.sendWithRetry(method, url, headers, body);
                     metrics.statusCode = res.status;
                     metrics.bytesReceived = res.body.length;
-                    metrics.bytesSent = body instanceof Buffer ? body.length : Buffer.byteLength(body || '');
+                    metrics.bytesSent =
+                        body instanceof Buffer
+                            ? body.length
+                            : Buffer.byteLength(body || "");
                     const parsed = await this.parseResponse(res, responseType);
                     // Cache GET requests
                     if (method === "GET" && useCache) {

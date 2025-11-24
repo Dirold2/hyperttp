@@ -66,10 +66,15 @@ class Request {
         this.scheme = config.scheme;
         this.host = config.host;
         this.port = config.port;
-        this.path = config.path || "";
-        this.headers = config.headers || {};
-        this.query = config.query || {};
-        this.bodyData = config.bodyData || {};
+        this.path = config.path ?? "";
+        this.headers = config.headers ?? {};
+        this.query = config.query ?? {};
+        this.bodyData = config.bodyData ?? {};
+    }
+    normalizePath(path) {
+        if (!path)
+            return "";
+        return path.startsWith("/") ? path : `/${path}`;
     }
     setPath(path) {
         this.path = path;
@@ -83,34 +88,33 @@ class Request {
         return this.headers;
     }
     setHeaders(headers) {
-        this.headers = headers;
+        this.headers = { ...headers };
         return this;
     }
     addHeaders(headers) {
-        for (const key in headers) {
-            this.headers[key] = headers[key];
-        }
+        this.headers = { ...this.headers, ...headers };
         return this;
     }
     getQuery() {
         return this.query;
     }
     setQuery(query) {
-        this.query = query;
+        this.query = { ...query };
         return this;
     }
     addQuery(query) {
-        for (const key in query) {
-            this.query[key] = query[key];
-        }
+        this.query = { ...this.query, ...query };
         return this;
     }
     getQueryAsString() {
-        if (!Object.keys(this.query).length)
-            return "";
-        return "?" + Object.entries(this.query)
-            .map(([key, val]) => `${key}=${val}`)
-            .join("&");
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(this.query)) {
+            if (value === undefined || value === null)
+                continue;
+            params.append(key, String(value));
+        }
+        const qs = params.toString();
+        return qs ? `?${qs}` : "";
     }
     getBodyData() {
         return this.bodyData;
@@ -119,25 +123,27 @@ class Request {
         return querystring.stringify(this.bodyData);
     }
     setBodyData(bodyData) {
-        this.bodyData = bodyData;
+        this.bodyData = { ...bodyData };
         return this;
     }
     addBodyData(bodyData) {
-        for (const key in bodyData) {
-            this.bodyData[key] = bodyData[key];
-        }
+        this.bodyData = { ...this.bodyData, ...bodyData };
         return this;
     }
     getURI() {
-        let uri = `${this.scheme}://${this.host}`;
-        if (this.port)
-            uri += `:${this.port}`;
-        if (this.path)
-            uri += this.path;
-        return uri;
+        const path = this.normalizePath(this.path);
+        const portPart = this.port ? `:${this.port}` : "";
+        return `${this.scheme}://${this.host}${portPart}${path}`;
     }
     getURL() {
-        return this.getURI() + this.getQueryAsString();
+        // Используем URL + searchParams для надёжной сборки
+        const base = new URL(this.getURI());
+        for (const [key, value] of Object.entries(this.query)) {
+            if (value === undefined || value === null)
+                continue;
+            base.searchParams.append(key, String(value));
+        }
+        return base.toString();
     }
 }
 exports.default = Request;
@@ -160,26 +166,69 @@ class PreparedRequest {
         const config = {
             scheme: url.protocol.replace(":", ""),
             host: url.hostname,
-            port: url.port ? parseInt(url.port) : url.protocol === "https:" ? 443 : 80,
-            path: "",
+            port: url.port
+                ? parseInt(url.port, 10)
+                : url.protocol === "https:"
+                    ? 443
+                    : 80,
+            path: url.pathname === "/" ? "" : url.pathname,
+            query: Object.fromEntries(url.searchParams.entries()),
         };
         this.request = new Request(config);
     }
-    setPath(path) { this.request.setPath(path); return this; }
-    setHost(host) { this.request.setHost(host); return this; }
-    getHeaders() { return this.request.getHeaders(); }
-    setHeaders(headers) { this.request.setHeaders(headers); return this; }
-    addHeaders(headers) { this.request.addHeaders(headers); return this; }
-    getQuery() { return this.request.getQuery(); }
-    setQuery(query) { this.request.setQuery(query); return this; }
-    addQuery(query) { this.request.addQuery(query); return this; }
-    getQueryAsString() { return this.request.getQueryAsString(); }
-    getBodyData() { return this.request.getBodyData(); }
-    getBodyDataString() { return this.request.getBodyDataString(); }
-    setBodyData(bodyData) { this.request.setBodyData(bodyData); return this; }
-    addBodyData(bodyData) { this.request.addBodyData(bodyData); return this; }
-    getURI() { return this.request.getURI(); }
-    getURL() { return this.request.getURL(); }
+    setPath(path) {
+        this.request.setPath(path);
+        return this;
+    }
+    setHost(host) {
+        this.request.setHost(host);
+        return this;
+    }
+    getHeaders() {
+        return this.request.getHeaders();
+    }
+    setHeaders(headers) {
+        this.request.setHeaders(headers);
+        return this;
+    }
+    addHeaders(headers) {
+        this.request.addHeaders(headers);
+        return this;
+    }
+    getQuery() {
+        return this.request.getQuery();
+    }
+    setQuery(query) {
+        this.request.setQuery(query);
+        return this;
+    }
+    addQuery(query) {
+        this.request.addQuery(query);
+        return this;
+    }
+    getQueryAsString() {
+        return this.request.getQueryAsString();
+    }
+    getBodyData() {
+        return this.request.getBodyData();
+    }
+    getBodyDataString() {
+        return this.request.getBodyDataString();
+    }
+    setBodyData(bodyData) {
+        this.request.setBodyData(bodyData);
+        return this;
+    }
+    addBodyData(bodyData) {
+        this.request.addBodyData(bodyData);
+        return this;
+    }
+    getURI() {
+        return this.request.getURI();
+    }
+    getURL() {
+        return this.request.getURL();
+    }
 }
 exports.PreparedRequest = PreparedRequest;
 //# sourceMappingURL=Request.js.map
