@@ -15,6 +15,39 @@ const inflate = promisify(zlib.inflate)
 const brotliDecompress = promisify(zlib.brotliDecompress)
 
 /**
+ * Custom error classes for better error handling
+ */
+export class HttpClientError extends Error {
+  constructor(
+    message: string,
+    public statusCode?: number,
+    public originalError?: Error,
+    public url?: string,
+    public method?: string
+  ) {
+    super(message)
+    this.name = "HttpClientError"
+    Object.setPrototypeOf(this, HttpClientError.prototype)
+  }
+}
+
+export class TimeoutError extends HttpClientError {
+  constructor(url: string, timeout: number) {
+    super(`Request timeout after ${timeout}ms for ${url}`)
+    this.name = "TimeoutError"
+    Object.setPrototypeOf(this, TimeoutError.prototype)
+  }
+}
+
+export class RateLimitError extends HttpClientError {
+  constructor(url: string, public retryAfter?: number) {
+    super(`Rate limited for ${url}${retryAfter ? `, retry after ${retryAfter}ms` : ""}`)
+    this.name = "RateLimitError"
+    Object.setPrototypeOf(this, RateLimitError.prototype)
+  }
+}
+
+/**
  * Log levels for the HTTP client logger
  */
 export type LogLevel = "debug" | "info" | "warn" | "error"
@@ -41,6 +74,26 @@ export interface RetryOptions {
 }
 
 /**
+ * Request interceptor type
+ */
+export type RequestInterceptor = (config: {
+  url: string
+  method: string
+  headers: Record<string, string>
+  body?: string | Buffer
+}) => Promise<{ url: string; method: string; headers: Record<string, string>; body?: string | Buffer }>
+
+/**
+ * Response interceptor type
+ */
+export type ResponseInterceptor = (response: {
+  status: number
+  headers: Record<string, any>
+  body: Buffer
+  url: string
+}) => Promise<{ status: number; headers: Record<string, any>; body: Buffer; url: string }>
+
+/**
  * Configuration options for the HttpClient
  */
 export interface HttpClientOptions {
@@ -62,6 +115,10 @@ export interface HttpClientOptions {
   logger?: LoggerFunction
   /** Custom retry options */
   retryOptions?: Partial<RetryOptions>
+  /** Follow redirects (default: true) */
+  followRedirects?: boolean
+  /** Maximum redirects to follow (default: 5) */
+  maxRedirects?: number
 }
 
 /**
@@ -81,15 +138,35 @@ export interface RequestInterface {
  */
 export interface HttpClientInterface {
   /** Performs a GET request */
-  get<T = any>(req: RequestInterface): Promise<T>
+  get<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>
   /** Performs a POST request */
-  post<T = any>(req: RequestInterface): Promise<T>
+  post<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>
   /** Performs a PUT request */
-  put<T = any>(req: RequestInterface): Promise<T>
+  put<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>
   /** Performs a DELETE request */
-  delete<T = any>(req: RequestInterface): Promise<T>
+  delete<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>
+  /** Performs a PATCH request */
+  patch<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>
+  /** Performs a HEAD request */
+  head<T = any>(req: RequestInterface): Promise<void>
   /** Clears the cache */
   clearCache(): void
+}
+
+/**
+ * Request metrics for tracking and monitoring
+ */
+export interface RequestMetrics {
+  startTime: number
+  endTime: number
+  duration: number
+  statusCode?: number
+  bytesReceived: number
+  bytesSent: number
+  retries: number
+  cached: boolean
+  url: string
+  method: string
 }
 
 /**
@@ -105,6 +182,9 @@ export interface HttpClientInterface {
  * - Cookie jar support
  * - Automatic response parsing (JSON/XML)
  * - Compression support (gzip, deflate, brotli)
+ * - Request/Response interceptors
+ * - Redirect following
+ * - Request metrics tracking
  *
  * @example
  * ```ts
@@ -112,7 +192,8 @@ export interface HttpClientInterface {
  *   timeout: 10000,
  *   maxConcurrent: 10,
  *   rateLimit: { maxRequests: 100, windowMs: 60000 },
- *   logger: (level, msg, meta) => console.log(`[${level}] ${msg}`, meta)
+ *   logger: (level, msg, meta) => console.log(`[${level}] ${msg}`, meta),
+ *   followRedirects: true
  * });
  *
  * const data = await client.get(request);
@@ -128,13 +209,16 @@ export default class HttpClientImproved implements HttpClientInterface {
   private retryOptions: RetryOptions
   private defaultHeaders: Record<string, string> = {}
   private options: HttpClientOptions
+  private requestInterceptors: RequestInterceptor[] = []
+  private responseInterceptors: ResponseInterceptor[] = []
+  private requestMetrics = new Map<string, RequestMetrics>()
 
   /**
    * Creates a new HttpClient instance
    * @param options - Configuration options for the HTTP client
    */
   constructor(options?: HttpClientOptions) {
-    this.options = options ?? {}
+    this.options = { followRedirects: true, maxRedirects: 5, ...options }
 
     // Initialize cache manager
     this.cache = new CacheManager({
@@ -189,6 +273,22 @@ export default class HttpClientImproved implements HttpClientInterface {
   }
 
   /**
+   * Adds a request interceptor
+   * @param interceptor - Function to intercept requests
+   */
+  addRequestInterceptor(interceptor: RequestInterceptor): void {
+    this.requestInterceptors.push(interceptor)
+  }
+
+  /**
+   * Adds a response interceptor
+   * @param interceptor - Function to intercept responses
+   */
+  addResponseInterceptor(interceptor: ResponseInterceptor): void {
+    this.responseInterceptors.push(interceptor)
+  }
+
+  /**
    * Internal logging method
    * @private
    */
@@ -202,23 +302,23 @@ export default class HttpClientImproved implements HttpClientInterface {
    * Decompresses response body based on content encoding
    * @private
    */
-  private async decompress(buf: Buffer, enc?: string): Promise<string> {
-    if (!enc) return buf.toString("utf-8")
+  private async decompress(buf: Buffer, enc?: string, charset: BufferEncoding = 'utf-8'): Promise<string> {
+    if (!enc) return buf.toString(charset)
 
     try {
       switch (enc.toLowerCase()) {
         case "gzip":
-          return (await gunzip(buf)).toString("utf-8")
+          return (await gunzip(buf)).toString(charset)
         case "deflate":
-          return (await inflate(buf)).toString("utf-8")
+          return (await inflate(buf)).toString(charset)
         case "br":
-          return (await brotliDecompress(buf)).toString("utf-8")
+          return (await brotliDecompress(buf)).toString(charset)
         default:
-          return buf.toString("utf-8")
+          return buf.toString(charset)
       }
     } catch (error) {
       this.log("error", `Decompression failed for encoding ${enc}`, error)
-      return buf.toString("utf-8")
+      return buf.toString(charset)
     }
   }
 
@@ -240,7 +340,41 @@ export default class HttpClientImproved implements HttpClientInterface {
   }
 
   /**
-   * Sends an HTTP request with automatic retry logic
+   * Applies request interceptors
+   * @private
+   */
+  private async applyRequestInterceptors(config: {
+    url: string
+    method: string
+    headers: Record<string, string>
+    body?: string | Buffer
+  }): Promise<typeof config> {
+    let result = config
+    for (const interceptor of this.requestInterceptors) {
+      result = await interceptor(result)
+    }
+    return result
+  }
+
+  /**
+   * Applies response interceptors
+   * @private
+   */
+  private async applyResponseInterceptors(response: {
+    status: number
+    headers: Record<string, any>
+    body: Buffer
+    url: string
+  }): Promise<typeof response> {
+    let result = response
+    for (const interceptor of this.responseInterceptors) {
+      result = await interceptor(result)
+    }
+    return result
+  }
+
+  /**
+   * Sends an HTTP request with automatic retry logic and redirect following
    * @private
    */
   private async sendWithRetry(
@@ -248,7 +382,8 @@ export default class HttpClientImproved implements HttpClientInterface {
     url: string,
     headers: Record<string, string>,
     body?: string | Buffer,
-  ): Promise<{ status: number; headers: Record<string, any>; body: Buffer }> {
+    redirects = 0,
+  ): Promise<{ status: number; headers: Record<string, any>; body: Buffer; url: string }> {
     let lastError: any
 
     for (let attempt = 0; attempt <= this.retryOptions.maxRetries; attempt++) {
@@ -256,39 +391,81 @@ export default class HttpClientImproved implements HttpClientInterface {
         // Apply rate limiting
         await this.limiter.wait()
 
+        // Apply request interceptors
+        let finalConfig = await this.applyRequestInterceptors({
+          url,
+          method,
+          headers,
+          body,
+        })
+
         // Set up request timeout
         const controller = new AbortController()
         const timeout = this.options.timeout ?? 15000
         const timer = setTimeout(() => controller.abort(), timeout)
 
-        // Make the request
-        const res = await request(url, {
-          method,
-          headers,
-          body,
-          dispatcher: this.agent,
-          signal: controller.signal,
-        })
-
-        clearTimeout(timer)
-
-        // Read response body
-        const buf = Buffer.from(await res.body.arrayBuffer())
-
-        // Check if we should retry based on status code
-        if (this.retryOptions.retryStatusCodes.includes(res.statusCode)) {
-          this.log("warn", `Retrying ${method} ${url} due to status ${res.statusCode}`, {
-            attempt: attempt + 1,
-            maxRetries: this.retryOptions.maxRetries,
+        try {
+          // Make the request
+          const res = await request(finalConfig.url, {
+            method: finalConfig.method,
+            headers: finalConfig.headers,
+            body: finalConfig.body,
+            dispatcher: this.agent,
+            signal: controller.signal,
           })
 
-          if (attempt < this.retryOptions.maxRetries) {
-            await this.sleep(this.calcDelay(attempt))
-            continue
-          }
-        }
+          clearTimeout(timer)
 
-        return { status: res.statusCode, headers: res.headers as Record<string, any>, body: buf }
+          // Read response body
+          const buf = Buffer.from(await res.body.arrayBuffer())
+
+          // Apply response interceptors
+          let response = await this.applyResponseInterceptors({
+            status: res.statusCode,
+            headers: res.headers as Record<string, any>,
+            body: buf,
+            url: finalConfig.url,
+          })
+
+          // Handle redirects
+          if (this.options.followRedirects && [301, 302, 303, 307, 308].includes(response.status)) {
+            if (redirects < (this.options.maxRedirects ?? 5)) {
+              const location = response.headers.location as string
+              if (location) {
+                this.log("debug", `Redirecting to ${location}`, { originalUrl: finalConfig.url })
+                const redirectMethod = response.status === 303 ? "GET" : method
+                return this.sendWithRetry(
+                  redirectMethod,
+                  location,
+                  headers,
+                  response.status === 303 ? undefined : body,
+                  redirects + 1,
+                )
+              }
+            }
+          }
+
+          // Check if we should retry based on status code
+          if (this.retryOptions.retryStatusCodes.includes(response.status)) {
+            this.log("warn", `Retrying ${method} ${finalConfig.url} due to status ${response.status}`, {
+              attempt: attempt + 1,
+              maxRetries: this.retryOptions.maxRetries,
+            })
+
+            if (attempt < this.retryOptions.maxRetries) {
+              await this.sleep(this.calcDelay(attempt))
+              continue
+            }
+          }
+
+          return response
+        } catch (timeoutErr: any) {
+          clearTimeout(timer)
+          if (timeoutErr.name === 'AbortError') {
+            throw new TimeoutError(url, timeout)
+          }
+          throw timeoutErr
+        }
       } catch (err: any) {
         lastError = err
         this.log("error", `Request error ${method} ${url}: ${err.message}`, {
@@ -302,63 +479,77 @@ export default class HttpClientImproved implements HttpClientInterface {
       }
     }
 
-    throw lastError
+    if (lastError instanceof HttpClientError) {
+      throw lastError
+    }
+
+    throw new HttpClientError(
+      `Request failed after ${this.retryOptions.maxRetries + 1} attempts`,
+      undefined,
+      lastError,
+      url,
+      method
+    )
   }
+
+  /**
+   * Parses Content-Type header
+   * @private
+   */
+  private parseContentType(contentType?: string): { type: string; charset: BufferEncoding } {
+    if (!contentType) return { type: 'text/plain', charset: 'utf-8' }
+
+    const parts = contentType.split(';')
+    const type = parts[0].trim()
+    const rawCharset = parts.find(p => p.includes('charset'))?.split('=')[1]?.trim() || 'utf-8'
+    const charset = rawCharset as BufferEncoding
+
+    return { type, charset }
+  }
+
 
   /**
    * Parses response body based on content type or responseType
    * @private
-   * @param res Response object
-   * @param responseType Optional type of response: 'json' | 'text' | 'buffer' | 'xml'
-   * @returns Parsed response
-   *
-   * @example
-   * ```ts
-   * const res = await client.get(req, 'json');   // JSON
-   * const text = await client.get(req, 'text');  // Plain text
-   * const buf = await client.get(req, 'buffer'); // Buffer
-   * const xml = await client.get(req, 'xml');    // XML parsed as object
-   * ```
    */
   private async parseResponse(
     res: { status: number; headers: Record<string, any>; body: Buffer },
     responseType?: ResponseType
   ): Promise<any> {
     try {
-      const text = await this.decompress(res.body, res.headers["content-encoding"]);
-      const contentType = res.headers["content-type"];
-      const type = responseType ?? "json";
+      const { type, charset } = this.parseContentType(res.headers["content-type"])
+      const text = await this.decompress(res.body, res.headers["content-encoding"], charset)
+      const finalType = responseType ?? "json"
 
-      switch (type) {
+      switch (finalType) {
         case "json":
-          if (contentType?.includes("json")) return JSON.parse(text);
-          try { return JSON.parse(text); } catch { return text; }
+          if (type.includes("json")) return JSON.parse(text)
+          try { return JSON.parse(text) } catch { return text }
 
         case "xml":
-          return new XMLParser({ ignoreAttributes: false }).parse(text);
+          return new XMLParser({ ignoreAttributes: false }).parse(text)
 
         case "text":
-          return text;
+          return text
 
         case "buffer":
-          return res.body;
+          return res.body
 
         default:
-          return text;
+          return text
       }
     } catch (error) {
-      this.log("error", "Failed to parse response", { error, status: res.status });
-      throw new Error(`Response parsing failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.log("error", "Failed to parse response", { error, status: res.status })
+      throw new HttpClientError(
+        `Response parsing failed: ${error instanceof Error ? error.message : String(error)}`,
+        res.status
+      )
     }
   }
 
   /**
    * Internal request method with caching and deduplication
    * @private
-   * @param method HTTP method
-   * @param req Request object
-   * @param useCache Whether to use cache (GET requests)
-   * @param responseType Type of response: 'json' | 'text' | 'buffer' | 'xml'
    */
   private async request<T = any>(
     method: string,
@@ -366,70 +557,97 @@ export default class HttpClientImproved implements HttpClientInterface {
     useCache = true,
     responseType?: ResponseType
   ): Promise<T> {
-    const url = req.getURL();
-    const rawBody = req.getBodyData();
-    const headers = { ...this.defaultHeaders, ...req.getHeaders() };
-    const contentType = headers["content-type"] || headers["Content-Type"] || "";
-    const isBodyAllowed = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+    const url = req.getURL()
+    const rawBody = req.getBodyData()
+    const headers = { ...this.defaultHeaders, ...req.getHeaders() }
+    const contentType = headers["content-type"] || headers["Content-Type"] || ""
+    const isBodyAllowed = ["POST", "PUT", "PATCH", "DELETE"].includes(method)
 
     // Prepare request body
-    let body: string | Buffer | undefined;
+    let body: string | Buffer | undefined
     if (isBodyAllowed && rawBody) {
       if (contentType.includes("application/json")) {
-        body = JSON.stringify(rawBody);
+        body = JSON.stringify(rawBody)
       } else if (contentType.includes("application/x-www-form-urlencoded")) {
-        body = querystring.stringify(rawBody);
+        body = querystring.stringify(rawBody)
       } else if (Buffer.isBuffer(rawBody)) {
-        body = rawBody;
+        body = rawBody
       } else {
-        body = typeof rawBody === "string" ? rawBody : JSON.stringify(rawBody);
+        body = typeof rawBody === "string" ? rawBody : JSON.stringify(rawBody)
       }
     }
 
     // Generate cache key
-    const key = `${method}:${url}:${body ?? ""}`;
+    const key = `${method}:${url}:${body ?? ""}`
 
     // Check cache for GET requests
     if (method === "GET" && useCache) {
-      const cached = this.cache.get<T>(key);
+      const cached = this.cache.get<T>(key)
       if (cached) {
-        this.log("debug", `Cache hit for ${url}`);
-        return cached;
+        this.log("debug", `Cache hit for ${url}`)
+        return cached
       }
     }
 
     // Deduplicate in-flight requests
     if (this.inflight.has(key)) {
-      this.log("debug", `Deduplicating request for ${url}`);
-      return this.inflight.get(key)!;
+      this.log("debug", `Deduplicating request for ${url}`)
+      return this.inflight.get(key)!
     }
 
     // Create and track the request promise
     const promise = (async () => {
+      const metrics: RequestMetrics = {
+        startTime: Date.now(),
+        endTime: 0,
+        duration: 0,
+        bytesReceived: 0,
+        bytesSent: 0,
+        retries: 0,
+        cached: false,
+        url,
+        method,
+      }
+
       try {
-        this.log("debug", `Starting request: ${method} ${url}`);
+        this.log("debug", `Starting request: ${method} ${url}`)
 
         const result = await this.queue.enqueue(async () => {
-          const res = await this.sendWithRetry(method, url, headers, body);
-          const parsed = await this.parseResponse(res, responseType);
+          const res = await this.sendWithRetry(method, url, headers, body)
+          metrics.statusCode = res.status
+          metrics.bytesReceived = res.body.length
+          metrics.bytesSent = body instanceof Buffer ? body.length : Buffer.byteLength(body || '')
+          
+          const parsed = await this.parseResponse(res, responseType)
 
           // Cache GET requests
           if (method === "GET" && useCache) {
-            this.cache.set(key, parsed);
+            this.cache.set(key, parsed)
+            metrics.cached = true
           }
 
-          return parsed;
-        });
+          return parsed
+        })
 
-        return result;
+        metrics.endTime = Date.now()
+        metrics.duration = metrics.endTime - metrics.startTime
+        this.requestMetrics.set(key, metrics)
+
+        this.log("info", `${method} ${url} completed in ${metrics.duration}ms`, metrics)
+        return result
+      } catch (error) {
+        metrics.endTime = Date.now()
+        metrics.duration = metrics.endTime - metrics.startTime
+        this.requestMetrics.set(key, metrics)
+        throw error
       } finally {
         // Clean up inflight map
-        this.inflight.delete(key);
+        this.inflight.delete(key)
       }
-    })();
+    })()
 
-    this.inflight.set(key, promise);
-    return promise;
+    this.inflight.set(key, promise)
+    return promise
   }
 
   /**
@@ -438,95 +656,45 @@ export default class HttpClientImproved implements HttpClientInterface {
    * @param req Request object containing URL, headers, and parameters
    * @param responseType Optional type of response to parse: "json" | "text" | "buffer" | "xml"
    * @returns Promise resolving to the parsed response of the specified type
-   *
-   * @example
-   * ```ts
-   * const data = await client.get(req); // Default JSON
-   * const text = await client.get(req, 'text'); // Plain text
-   * const buf = await client.get(req, 'buffer'); // Buffer
-   * const xml = await client.get(req, 'xml'); // Parsed XML
-   * ```
    */
   get<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T> {
-    return this.request<T>("GET", req, true, responseType);
+    return this.request<T>("GET", req, true, responseType)
   }
 
   /**
    * Performs a POST request
-   * @template T - Expected response type
-   * @param req Request object containing URL, headers, and body
-   * @param responseType Optional type of response to parse: "json" | "text" | "buffer" | "xml"
-   * @returns Promise resolving to the parsed response of the specified type
-   *
-   * @example
-   * ```ts
-   * const data = await client.post(req); // Default JSON
-   * const text = await client.post(req, 'text'); // Plain text
-   * const buf = await client.post(req, 'buffer'); // Buffer
-   * const xml = await client.post(req, 'xml'); // Parsed XML
-   * ```
    */
   post<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T> {
-    return this.request<T>("POST", req, false, responseType);
+    return this.request<T>("POST", req, false, responseType)
   }
 
   /**
    * Performs a PUT request
-   * @template T - Expected response type
-   * @param req Request object containing URL, headers, and body
-   * @param responseType Optional type of response to parse: "json" | "text" | "buffer" | "xml"
-   * @returns Promise resolving to the parsed response of the specified type
-   *
-   * @example
-   * ```ts
-   * const data = await client.put(req); // Default JSON
-   * const text = await client.put(req, 'text'); // Plain text
-   * const buf = await client.put(req, 'buffer'); // Buffer
-   * const xml = await client.put(req, 'xml'); // Parsed XML
-   * ```
    */
   put<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T> {
-    return this.request<T>("PUT", req, false, responseType);
+    return this.request<T>("PUT", req, false, responseType)
   }
 
   /**
    * Performs a DELETE request
-   * @template T - Expected response type
-   * @param req Request object containing URL, headers, and optional body
-   * @param responseType Optional type of response to parse: "json" | "text" | "buffer" | "xml"
-   * @returns Promise resolving to the parsed response of the specified type
-   *
-   * @example
-   * ```ts
-   * const data = await client.delete(req); // Default JSON
-   * const text = await client.delete(req, 'text'); // Plain text
-   * const buf = await client.delete(req, 'buffer'); // Buffer
-   * const xml = await client.delete(req, 'xml'); // Parsed XML
-   * ```
    */
   delete<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T> {
-    return this.request<T>("DELETE", req, false, responseType);
+    return this.request<T>("DELETE", req, false, responseType)
   }
 
   /**
    * Performs a PATCH request
-   * @template T - Expected response type
-   * @param req Request object containing URL, headers, and body
-   * @param responseType Optional type of response to parse: "json" | "text" | "buffer" | "xml"
-   * @returns Promise resolving to the parsed response of the specified type
-   *
-   * @example
-   * ```ts
-   * const data = await client.patch(req); // Default JSON
-   * const text = await client.patch(req, 'text'); // Plain text
-   * const buf = await client.patch(req, 'buffer'); // Buffer
-   * const xml = await client.patch(req, 'xml'); // Parsed XML
-   * ```
    */
   patch<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T> {
-    return this.request<T>("PATCH", req, false, responseType);
+    return this.request<T>("PATCH", req, false, responseType)
   }
 
+  /**
+   * Performs a HEAD request
+   */
+  head(req: RequestInterface): Promise<void> {
+    return this.request<void>("HEAD", req, false).then(() => undefined)
+  }
 
   /**
    * Clears all cached responses
@@ -537,8 +705,15 @@ export default class HttpClientImproved implements HttpClientInterface {
   }
 
   /**
+   * Gets request metrics for a specific request
+   */
+  getMetrics(url: string, method: string): RequestMetrics | undefined {
+    const key = `${method}:${url}`
+    return this.requestMetrics.get(key)
+  }
+
+  /**
    * Gets statistics about the HTTP client state
-   * @returns Object containing current state information
    */
   getStats(): {
     cacheSize: number

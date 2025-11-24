@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A high-performance, universal HTTP client for Node.js with caching, retries, queueing, rate limiting, cookies and logging.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,20 +24,20 @@
   ],
   "dependencies": {
     "undici": "^7.16.0",
-    "tough-cookie": "^5.0.0",
-    "http-cookie-agent": "^7.0.2",
-    "fast-xml-parser": "^5.3.0",
+    "tough-cookie": "^6.0.0",
+    "http-cookie-agent": "^7.0.3",
+    "fast-xml-parser": "^5.3.2",
     "lru-cache": "^11.2.2"
   },
   "devDependencies": {
-    "@types/node": "^24.7.2",
+    "@types/node": "^24.10.1",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4",
-    "eslint": "^9.37.0",
+    "vitest": "^4.0.13",
+    "eslint": "^9.39.1",
     "prettier": "3.6.2",
     "chalk": "5.6.2",
     "tsx": "^4.20.6",
-    "dotenv-cli": "^10.0.0"
+    "dotenv-cli": "^11.0.0"
   },
   "scripts": {
     "build": "tsc",
