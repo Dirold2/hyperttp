@@ -5,6 +5,7 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 package-lock.json
+bun.lock
 
 # PNPM store
 .pnp/
