@@ -1,13 +1,13 @@
-import { LRUCache } from "lru-cache"
+import { LRUCache } from "lru-cache";
 
 /**
  * Configuration options for the CacheManager
  */
 export interface CacheManagerOptions {
   /** Time-to-live for cached items in milliseconds (default: 300000ms / 5 minutes) */
-  cacheTTL?: number
+  cacheTTL?: number;
   /** Maximum number of items to store in cache (default: 500) */
-  cacheMaxSize?: number
+  cacheMaxSize?: number;
 }
 
 /**
@@ -22,20 +22,20 @@ export interface CacheManagerOptions {
  * ```
  */
 export class CacheManager {
-  private cache: LRUCache<string, any>
-  private ttl: number
+  private cache: LRUCache<string, any>;
+  private ttl: number;
 
   /**
    * Creates a new CacheManager instance
    * @param options - Configuration options for cache behavior
    */
   constructor(options?: CacheManagerOptions) {
-    this.ttl = options?.cacheTTL ?? 300_000
+    this.ttl = options?.cacheTTL ?? 300_000;
     this.cache = new LRUCache({
       max: options?.cacheMaxSize ?? 500,
       ttl: this.ttl,
       updateAgeOnGet: true,
-    })
+    });
   }
 
   /**
@@ -45,7 +45,7 @@ export class CacheManager {
    * @returns The cached value or null if not found or expired
    */
   get<T>(key: string): T | null {
-    return this.cache.get(key) ?? null
+    return this.cache.get(key) ?? null;
   }
 
   /**
@@ -55,7 +55,7 @@ export class CacheManager {
    * @param value - The value to store
    */
   set<T>(key: string, value: T): void {
-    this.cache.set(key, value)
+    this.cache.set(key, value);
   }
 
   /**
@@ -64,7 +64,7 @@ export class CacheManager {
    * @returns True if the key exists and hasn't expired
    */
   has(key: string): boolean {
-    return this.cache.has(key)
+    return this.cache.has(key);
   }
 
   /**
@@ -73,14 +73,14 @@ export class CacheManager {
    * @returns True if the key was deleted, false if it didn't exist
    */
   delete(key: string): boolean {
-    return this.cache.delete(key)
+    return this.cache.delete(key);
   }
 
   /**
    * Clears all entries from the cache
    */
   clear(): void {
-    this.cache.clear()
+    this.cache.clear();
   }
 
   /**
@@ -88,6 +88,6 @@ export class CacheManager {
    * @returns The number of cached items
    */
   get size(): number {
-    return this.cache.size
+    return this.cache.size;
   }
 }

@@ -10,8 +10,8 @@
  * ```
  */
 export class QueueManager {
-  private queue: (() => void)[] = []
-  private running = 0
+  private queue: (() => void)[] = [];
+  private running = 0;
 
   /**
    * Creates a new QueueManager instance
@@ -38,17 +38,17 @@ export class QueueManager {
   async enqueue<T>(executor: () => Promise<T>): Promise<T> {
     // Wait if we've reached the concurrency limit
     if (this.running >= this.maxConcurrent) {
-      await new Promise<void>((resolve) => this.queue.push(resolve))
+      await new Promise<void>((resolve) => this.queue.push(resolve));
     }
 
-    this.running++
+    this.running++;
     try {
-      return await executor()
+      return await executor();
     } finally {
-      this.running--
+      this.running--;
       // Process next task in queue
-      const next = this.queue.shift()
-      if (next) next()
+      const next = this.queue.shift();
+      if (next) next();
     }
   }
 
@@ -57,7 +57,7 @@ export class QueueManager {
    * @returns The number of currently executing tasks
    */
   get activeCount(): number {
-    return this.running
+    return this.running;
   }
 
   /**
@@ -65,6 +65,6 @@ export class QueueManager {
    * @returns The number of queued tasks
    */
   get queuedCount(): number {
-    return this.queue.length
+    return this.queue.length;
   }
 }

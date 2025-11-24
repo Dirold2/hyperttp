@@ -16,7 +16,11 @@ export interface UrlExtractorInterface {
    * @param platform Platform name that has been registered
    * @returns Record of extracted values (keys depend on the pattern)
    */
-  extractId<T extends string | number>(url: string, entity: string, platform: string): Record<string, T>;
+  extractId<T extends string | number>(
+    url: string,
+    entity: string,
+    platform: string,
+  ): Record<string, T>;
 }
 
 /**
@@ -33,4 +37,4 @@ export interface UrlPattern<T extends string = string> {
   groupNames: T[];
 }
 
-export * from "./request"
+export * from "./request";

@@ -3,9 +3,9 @@
  */
 export interface RateLimiterConfig {
   /** Maximum number of requests allowed within the time window (default: 100) */
-  maxRequests?: number
+  maxRequests?: number;
   /** Time window in milliseconds (default: 60000ms / 1 minute) */
-  windowMs?: number
+  windowMs?: number;
 }
 
 /**
@@ -20,17 +20,17 @@ export interface RateLimiterConfig {
  * ```
  */
 export class RateLimiter {
-  private timestamps: number[] = []
-  private max: number
-  private window: number
+  private timestamps: number[] = [];
+  private max: number;
+  private window: number;
 
   /**
    * Creates a new RateLimiter instance
    * @param config - Configuration for rate limiting behavior
    */
   constructor(config?: RateLimiterConfig) {
-    this.max = config?.maxRequests ?? 100
-    this.window = config?.windowMs ?? 60_000
+    this.max = config?.maxRequests ?? 100;
+    this.window = config?.windowMs ?? 60_000;
   }
 
   /**
@@ -46,21 +46,21 @@ export class RateLimiter {
    * ```
    */
   async wait(): Promise<void> {
-    const now = Date.now()
+    const now = Date.now();
 
     // Remove timestamps outside the current window
-    this.timestamps = this.timestamps.filter((t) => now - t < this.window)
+    this.timestamps = this.timestamps.filter((t) => now - t < this.window);
 
     // If we've hit the limit, wait until the oldest request expires
     if (this.timestamps.length >= this.max) {
-      const delay = this.timestamps[0] + this.window - now
+      const delay = this.timestamps[0] + this.window - now;
       if (delay > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delay))
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
     // Record this request
-    this.timestamps.push(Date.now())
+    this.timestamps.push(Date.now());
   }
 
   /**
@@ -68,15 +68,15 @@ export class RateLimiter {
    * @returns The number of requests made within the current time window
    */
   get currentCount(): number {
-    const now = Date.now()
-    this.timestamps = this.timestamps.filter((t) => now - t < this.window)
-    return this.timestamps.length
+    const now = Date.now();
+    this.timestamps = this.timestamps.filter((t) => now - t < this.window);
+    return this.timestamps.length;
   }
 
   /**
    * Resets the rate limiter, clearing all recorded timestamps
    */
   reset(): void {
-    this.timestamps = []
+    this.timestamps = [];
   }
 }

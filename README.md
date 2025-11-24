@@ -4,14 +4,14 @@ Advanced HTTP client for Node.js with caching, rate limiting, request queuing, a
 
 ## Features
 
-* Automatic request deduplication
-* LRU caching with TTL
-* Configurable rate limiting
-* Concurrent request management
-* Exponential backoff with jitter
-* Cookie jar support
-* Automatic response parsing (JSON/XML)
-* Compression support (gzip, deflate, brotli)
+- Automatic request deduplication
+- LRU caching with TTL
+- Configurable rate limiting
+- Concurrent request management
+- Exponential backoff with jitter
+- Cookie jar support
+- Automatic response parsing (JSON/XML)
+- Compression support (gzip, deflate, brotli)
 
 ---
 
@@ -29,20 +29,20 @@ Advanced HTTP client for Node.js with caching, rate limiting, request queuing, a
 
 ### Возможности
 
-* Автоматическое предотвращение дублирования запросов
-* LRU кэширование с TTL
-* Настраиваемое ограничение запросов
-* Управление конкурентными запросами
-* Экспоненциальная задержка с джиттером
-* Поддержка cookie jar
-* Автопарсинг JSON/XML
-* Поддержка сжатия (gzip, deflate, brotli)
+- Автоматическое предотвращение дублирования запросов
+- LRU кэширование с TTL
+- Настраиваемое ограничение запросов
+- Управление конкурентными запросами
+- Экспоненциальная задержка с джиттером
+- Поддержка cookie jar
+- Автопарсинг JSON/XML
+- Поддержка сжатия (gzip, deflate, brotli)
 
 ### Пример использования
 
 ```ts
-import HttpClientImproved from './src/Hyperttp/Core/HttpClientImproved';
-import Request from './src/Hyperttp/Request';
+import HttpClientImproved from "./src/Hyperttp/Core/HttpClientImproved";
+import Request from "./src/Hyperttp/Request";
 
 const client = new HttpClientImproved({
   timeout: 10000,
@@ -50,7 +50,7 @@ const client = new HttpClientImproved({
   logger: (level, msg) => console.log(`[${level}] ${msg}`),
 });
 
-const req = new Request({ scheme: 'https', host: 'example.com', port: 443 });
+const req = new Request({ scheme: "https", host: "example.com", port: 443 });
 const data = await client.get(req);
 console.log(data);
 ```
@@ -65,20 +65,20 @@ Advanced HTTP client for Node.js with caching, rate limiting, request queuing, a
 
 ### Features
 
-* Automatic request deduplication
-* LRU caching with TTL
-* Configurable rate limiting
-* Concurrent request management
-* Exponential backoff with jitter
-* Cookie jar support
-* Automatic response parsing (JSON/XML)
-* Compression support (gzip, deflate, brotli)
+- Automatic request deduplication
+- LRU caching with TTL
+- Configurable rate limiting
+- Concurrent request management
+- Exponential backoff with jitter
+- Cookie jar support
+- Automatic response parsing (JSON/XML)
+- Compression support (gzip, deflate, brotli)
 
 ### Usage Example
 
 ```ts
-import HttpClientImproved from './src/Hyperttp/Core/HttpClientImproved';
-import Request from './src/Hyperttp/Request';
+import HttpClientImproved from "./src/Hyperttp/Core/HttpClientImproved";
+import Request from "./src/Hyperttp/Request";
 
 const client = new HttpClientImproved({
   timeout: 10000,
@@ -86,7 +86,7 @@ const client = new HttpClientImproved({
   logger: (level, msg) => console.log(`[${level}] ${msg}`),
 });
 
-const req = new Request({ scheme: 'https', host: 'example.com', port: 443 });
+const req = new Request({ scheme: "https", host: "example.com", port: 443 });
 const data = await client.get(req);
 console.log(data);
 ```

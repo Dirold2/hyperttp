@@ -151,7 +151,7 @@ export interface HttpClientOptions {
   logger?: (
     level: "debug" | "info" | "warn" | "error",
     msg: string,
-    meta?: any
+    meta?: any,
   ) => void;
 
   /** User-Agent string to send with requests */

@@ -5,7 +5,7 @@ export {
   RateLimiter,
   Request,
   PreparedRequest,
-  UrlExtractor
+  UrlExtractor,
 } from "./Hyperttp";
 
 export type * from "./Types";

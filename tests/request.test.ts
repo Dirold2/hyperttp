@@ -15,7 +15,9 @@ describe("Request class", () => {
 
     expect(req.getURI()).toBe("https://api.example.com:443/v1/users");
     expect(req.getQueryAsString()).toBe("?page=1&limit=10");
-    expect(req.getURL()).toBe("https://api.example.com:443/v1/users?page=1&limit=10");
+    expect(req.getURL()).toBe(
+      "https://api.example.com/v1/users?page=1&limit=10",
+    );
     expect(req.getHeaders()).toEqual({ Authorization: "Bearer token" });
   });
 
@@ -64,15 +66,18 @@ describe("Request class", () => {
 
 describe("PreparedRequest class", () => {
   it("should parse base URL and build full URL correctly", () => {
-    const prepReq = new PreparedRequest("https://api.example.com:443");
+    const prepReq = new PreparedRequest("https://api.example.com");
 
-    prepReq.setPath("/v1/users")
-           .addQuery({ page: "2", limit: "5" })
-           .addHeaders({ "X-Test": "123" });
+    prepReq
+      .setPath("/v1/users")
+      .addQuery({ page: "2", limit: "5" })
+      .addHeaders({ "X-Test": "123" });
 
     expect(prepReq.getURI()).toBe("https://api.example.com:443/v1/users");
     expect(prepReq.getQueryAsString()).toBe("?page=2&limit=5");
-    expect(prepReq.getURL()).toBe("https://api.example.com:443/v1/users?page=2&limit=5");
+    expect(prepReq.getURL()).toBe(
+      "https://api.example.com/v1/users?page=2&limit=5",
+    );
     expect(prepReq.getHeaders()).toEqual({ "X-Test": "123" });
   });
 

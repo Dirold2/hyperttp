@@ -2,14 +2,14 @@ import { UrlExtractorInterface, UrlPattern } from "../Types";
 
 /**
  * Universal URL Extractor
- * 
- * Allows extraction of entity IDs (track, album, artist, playlist, etc.) 
+ *
+ * Allows extraction of entity IDs (track, album, artist, playlist, etc.)
  * from URLs of multiple platforms using configurable regex patterns.
- * 
+ *
  * @example
  * ```ts
  * const extractor = new UrlExtractor();
- * 
+ *
  * // Register Yandex Music patterns
  * extractor.registerPlatform("yandex", [
  *   { entity: "track", regex: /music\.yandex\.ru\/track\/(?<id>\d+)/, groupNames: ["id"] },
@@ -18,14 +18,14 @@ import { UrlExtractorInterface, UrlPattern } from "../Types";
  *   { entity: "playlist", regex: /music\.yandex\.ru\/users\/(?<user>[\w\d\-_\.]+)\/playlists\/(?<id>\d+)/, groupNames: ["id", "user"] },
  *   { entity: "playlist", regex: /music\.yandex\.ru\/playlists?\/(?<uid>(?:ar\.)?[A-Za-z0-9\-]+)/, groupNames: ["uid"] },
  * ]);
- * 
+ *
  * // Extract track ID
  * const trackId = extractor.extractId<number>(
  *   "https://music.yandex.ru/track/25063569",
  *   "track",
  *   "yandex"
  * ).id;
- * 
+ *
  * // Extract playlist info
  * const playlist = extractor.extractId<string | number>(
  *   "https://music.yandex.ru/playlists/ar123456",
@@ -68,22 +68,26 @@ export default class UrlExtractor implements UrlExtractorInterface {
    */
   private extractGroups<T extends string>(
     url: string,
-    pattern: UrlPattern<T>
+    pattern: UrlPattern<T>,
   ): Record<T, string> {
     const match = url.match(pattern.regex)?.groups;
     if (!match) throw new Error(`Invalid ${pattern.entity} URL: ${url}`);
 
-    return pattern.groupNames.reduce((acc, name) => {
-      const value = match[name];
-      if (!value) throw new Error(`Missing "${name}" in ${pattern.entity} URL: ${url}`);
-      acc[name] = value;
-      return acc;
-    }, {} as Record<T, string>);
+    return pattern.groupNames.reduce(
+      (acc, name) => {
+        const value = match[name];
+        if (!value)
+          throw new Error(`Missing "${name}" in ${pattern.entity} URL: ${url}`);
+        acc[name] = value;
+        return acc;
+      },
+      {} as Record<T, string>,
+    );
   }
 
   /**
    * Extract an entity ID from a URL.
-   * 
+   *
    * This method tries all registered patterns for the given entity and platform.
    * The returned values are always strings. If you expect numeric IDs, you should
    * convert them using `Number()`.
@@ -105,10 +109,15 @@ export default class UrlExtractor implements UrlExtractorInterface {
     url: string,
     entity: string,
     platform: string,
-    castNumbers = true
+    castNumbers = true,
   ): Record<string, T> {
-    const patterns = this.patterns[platform]?.filter(p => p.entity === entity);
-    if (!patterns?.length) throw new Error(`No patterns registered for "${entity}" on platform "${platform}"`);
+    const patterns = this.patterns[platform]?.filter(
+      (p) => p.entity === entity,
+    );
+    if (!patterns?.length)
+      throw new Error(
+        `No patterns registered for "${entity}" on platform "${platform}"`,
+      );
 
     for (const pattern of patterns) {
       try {
@@ -133,6 +142,4 @@ export default class UrlExtractor implements UrlExtractorInterface {
 
     throw new Error(`Invalid ${entity} URL for platform "${platform}": ${url}`);
   }
-
-
 }

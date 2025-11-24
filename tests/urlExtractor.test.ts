@@ -7,11 +7,32 @@ describe("UrlExtractor", () => {
 
   // Регистрируем Yandex Music
   const yandexPatterns: UrlPattern[] = [
-    { entity: "track", regex: /music\.yandex\.ru\/track\/(?<id>\d+)/, groupNames: ["id"] },
-    { entity: "album", regex: /music\.yandex\.ru\/album\/(?<id>\d+)/, groupNames: ["id"] },
-    { entity: "artist", regex: /music\.yandex\.ru\/artist\/(?<id>\d+)/, groupNames: ["id"] },
-    { entity: "playlist", regex: /music\.yandex\.ru\/users\/(?<user>[\w\d\-_\.]+)\/playlists\/(?<id>\d+)/, groupNames: ["id", "user"] },
-    { entity: "playlist", regex: /music\.yandex\.ru\/playlists?\/(?<uid>(?:ar\.)?[A-Za-z0-9\-]+)/, groupNames: ["uid"] },
+    {
+      entity: "track",
+      regex: /music\.yandex\.ru\/track\/(?<id>\d+)/,
+      groupNames: ["id"],
+    },
+    {
+      entity: "album",
+      regex: /music\.yandex\.ru\/album\/(?<id>\d+)/,
+      groupNames: ["id"],
+    },
+    {
+      entity: "artist",
+      regex: /music\.yandex\.ru\/artist\/(?<id>\d+)/,
+      groupNames: ["id"],
+    },
+    {
+      entity: "playlist",
+      regex:
+        /music\.yandex\.ru\/users\/(?<user>[\w\d\-_\.]+)\/playlists\/(?<id>\d+)/,
+      groupNames: ["id", "user"],
+    },
+    {
+      entity: "playlist",
+      regex: /music\.yandex\.ru\/playlists?\/(?<uid>(?:ar\.)?[A-Za-z0-9\-]+)/,
+      groupNames: ["uid"],
+    },
   ];
 
   extractor.registerPlatform("yandex", yandexPatterns);
@@ -36,14 +57,22 @@ describe("UrlExtractor", () => {
 
   it("should extract playlist with user", () => {
     const url = "https://music.yandex.ru/users/testuser/playlists/67890";
-    const result = extractor.extractId<number | string>(url, "playlist", "yandex");
+    const result = extractor.extractId<number | string>(
+      url,
+      "playlist",
+      "yandex",
+    );
     expect(result.id).toBe(67890);
     expect(result.user).toBe("testuser");
   });
 
   it("should extract playlist with UID", () => {
     const url = "https://music.yandex.ru/playlists/ar123456";
-    const result = extractor.extractId<string | number>(url, "playlist", "yandex");
+    const result = extractor.extractId<string | number>(
+      url,
+      "playlist",
+      "yandex",
+    );
     expect(result.uid).toBe("ar123456");
     expect(result.user).toBeUndefined();
   });
@@ -55,6 +84,8 @@ describe("UrlExtractor", () => {
 
   it("should throw error if no patterns registered", () => {
     const url = "https://music.example.com/track/123";
-    expect(() => extractor.extractId<number>(url, "track", "nonexistent")).toThrow();
+    expect(() =>
+      extractor.extractId<number>(url, "track", "nonexistent"),
+    ).toThrow();
   });
 });
