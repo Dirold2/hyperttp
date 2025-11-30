@@ -35,8 +35,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RateLimitError = exports.TimeoutError = exports.HttpClientError = void 0;
 const tough_cookie_1 = require("tough-cookie");
-const undici_1 = require("http-cookie-agent/undici");
-const undici_2 = require("undici");
+const undici_1 = require("undici");
+const undici_2 = require("http-cookie-agent/undici");
 const zlib = __importStar(require("zlib"));
 const util_1 = require("util");
 const fast_xml_parser_1 = require("fast-xml-parser");
@@ -158,12 +158,11 @@ class HttpClientImproved {
             "Accept-Encoding": "gzip, deflate, br",
             "User-Agent": this.options.userAgent ?? "Hyperttp/0.1.0 Node.js",
         };
-        // Initialize HTTP agent with cookie support
-        this.agent = new undici_1.CookieAgent({
-            cookies: { jar: this.cookieJar },
+        // Initialize HTTP agent with cookie support (новый API для undici v7)
+        this.agent = new undici_1.Agent({
             connections: 100,
             pipelining: 10,
-        });
+        }).compose((0, undici_2.cookie)({ jar: this.cookieJar }));
     }
     /**
      * Sets or updates default headers for all requests
@@ -288,7 +287,7 @@ class HttpClientImproved {
                 const timer = setTimeout(() => controller.abort(), timeout);
                 try {
                     // Make the request
-                    const res = await (0, undici_2.request)(finalConfig.url, {
+                    const res = await (0, undici_1.request)(finalConfig.url, {
                         method: finalConfig.method,
                         headers: finalConfig.headers,
                         body: finalConfig.body,
