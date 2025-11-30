@@ -1,5 +1,5 @@
 import { CookieJar } from "tough-cookie";
-import { Agent, Dispatcher, request } from "undici";
+import { Agent, request } from "undici";
 import { cookie } from "http-cookie-agent/undici";
 import * as zlib from "zlib";
 import { promisify } from "util";
@@ -226,7 +226,7 @@ export interface RequestMetrics {
  */
 export default class HttpClientImproved implements HttpClientInterface {
   private cookieJar = new CookieJar();
-  private agent: Dispatcher;
+  private agent: import("undici").Dispatcher;
   private cache: CacheManager;
   private queue: QueueManager;
   private limiter: RateLimiter;
@@ -275,11 +275,14 @@ export default class HttpClientImproved implements HttpClientInterface {
       "User-Agent": this.options.userAgent ?? "Hyperttp/0.1.0 Node.js",
     };
 
-    // Initialize HTTP agent with cookie support (новый API для undici v7)
+    // Initialize HTTP agent with cookie support
     this.agent = new Agent({
       connections: 100,
       pipelining: 10,
-    }).compose(cookie({ jar: this.cookieJar }));
+      interceptors: {
+        Client: [cookie({ jar: this.cookieJar })],
+      },
+    });
   }
 
   /**

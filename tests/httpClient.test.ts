@@ -3,6 +3,11 @@ import { HttpClientImproved, Request } from "../src";
 
 const mockRequest = vi.hoisted(() => vi.fn());
 vi.mock("undici", () => ({
+  Agent: class MockAgent {
+    compose() {
+      return this; // Return itself for chaining
+    }
+  },
   request: mockRequest,
 }));
 
