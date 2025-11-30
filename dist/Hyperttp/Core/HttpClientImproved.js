@@ -158,11 +158,14 @@ class HttpClientImproved {
             "Accept-Encoding": "gzip, deflate, br",
             "User-Agent": this.options.userAgent ?? "Hyperttp/0.1.0 Node.js",
         };
-        // Initialize HTTP agent with cookie support (новый API для undici v7)
+        // Initialize HTTP agent with cookie support
         this.agent = new undici_1.Agent({
             connections: 100,
             pipelining: 10,
-        }).compose((0, undici_2.cookie)({ jar: this.cookieJar }));
+            interceptors: {
+                Client: [(0, undici_2.cookie)({ jar: this.cookieJar })],
+            },
+        });
     }
     /**
      * Sets or updates default headers for all requests
