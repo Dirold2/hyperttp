@@ -9,13 +9,31 @@ export declare class HttpClientError extends Error {
     originalError?: Error | undefined;
     url?: string | undefined;
     method?: string | undefined;
+    /**
+     * Creates a new HttpClientError instance.
+     * @param message The error message
+     * @param statusCode Optional HTTP status code
+     * @param originalError Optional original error that caused this error
+     * @param url Optional request URL
+     * @param method Optional HTTP method
+     */
     constructor(message: string, statusCode?: number | undefined, originalError?: Error | undefined, url?: string | undefined, method?: string | undefined);
 }
 export declare class TimeoutError extends HttpClientError {
+    /**
+     * Creates a new TimeoutError instance.
+     * @param url The request URL that timed out
+     * @param timeout The timeout duration in milliseconds
+     */
     constructor(url: string, timeout: number);
 }
 export declare class RateLimitError extends HttpClientError {
     retryAfter?: number | undefined;
+    /**
+     * Creates a new RateLimitError instance.
+     * @param url The request URL that was rate limited
+     * @param retryAfter Optional retry after duration in milliseconds
+     */
     constructor(url: string, retryAfter?: number | undefined);
 }
 /**
@@ -36,7 +54,7 @@ export interface RetryOptions {
     baseDelay: number;
     /** Maximum delay in milliseconds between retries (default: 30000) */
     maxDelay: number;
-    /** HTTP status codes that should trigger a retry (default: [408, 429, 500, 502, 503, 504]) */
+    /** HTTP status codes that should trigger a retry */
     retryStatusCodes: number[];
     /** Whether to add random jitter to retry delays (default: true) */
     jitter: boolean;
@@ -85,7 +103,7 @@ export interface HttpClientOptions {
     cacheMaxSize?: number;
     /** Rate limiting configuration */
     rateLimit?: RateLimiterConfig;
-    /** Custom User-Agent header (default: "Hyperttp/0.1.0 Node.js") */
+    /** Custom User-Agent header */
     userAgent?: string;
     /** Logger function for debugging and monitoring */
     logger?: LoggerFunction;
@@ -95,39 +113,31 @@ export interface HttpClientOptions {
     followRedirects?: boolean;
     /** Maximum redirects to follow (default: 5) */
     maxRedirects?: number;
+    /** Optional: limit response body size in bytes (protects memory) */
+    maxResponseBytes?: number;
 }
 /**
  * Interface for request objects
  */
 export interface RequestInterface {
-    /** Gets the full URL for the request */
     getURL(): string;
-    /** Gets the request body data */
     getBodyData(): any;
-    /** Gets the request headers */
     getHeaders(): Record<string, string>;
 }
 /**
  * Interface for HTTP client implementations
  */
 export interface HttpClientInterface {
-    /** Performs a GET request */
     get<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
-    /** Performs a POST request */
     post<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
-    /** Performs a PUT request */
     put<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
-    /** Performs a DELETE request */
     delete<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
-    /** Performs a PATCH request */
     patch<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
-    /** Performs a HEAD request */
-    head<T = any>(req: RequestInterface): Promise<void>;
-    /** Clears the cache */
+    head(req: RequestInterface): Promise<void>;
     clearCache(): void;
 }
 /**
- * Request metrics for tracking and monitoring
+ * Interface for request performance metrics
  */
 export interface RequestMetrics {
     startTime: number;
@@ -144,32 +154,6 @@ export interface RequestMetrics {
 /**
  * Advanced HTTP client with built-in caching, rate limiting, request queuing,
  * automatic retries, cookie management, and response decompression.
- *
- * Features:
- * - Automatic request deduplication
- * - LRU caching with TTL
- * - Configurable rate limiting
- * - Concurrent request management
- * - Exponential backoff with jitter
- * - Cookie jar support
- * - Automatic response parsing (JSON/XML)
- * - Compression support (gzip, deflate, brotli)
- * - Request/Response interceptors
- * - Redirect following
- * - Request metrics tracking
- *
- * @example
- * ```ts
- * const client = new HttpClientImproved({
- *   timeout: 10000,
- *   maxConcurrent: 10,
- *   rateLimit: { maxRequests: 100, windowMs: 60000 },
- *   logger: (level, msg, meta) => console.log(`[${level}] ${msg}`, meta),
- *   followRedirects: true
- * });
- *
- * const data = await client.get(request);
- * ```
  */
 export default class HttpClientImproved implements HttpClientInterface {
     private cookieJar;
@@ -185,118 +169,105 @@ export default class HttpClientImproved implements HttpClientInterface {
     private responseInterceptors;
     private requestMetrics;
     /**
-     * Creates a new HttpClient instance
-     * @param options - Configuration options for the HTTP client
+     * Creates a new instance of HttpClientImproved.
+     * @param options Optional configuration options for the HTTP client
      */
     constructor(options?: HttpClientOptions);
     /**
-     * Sets or updates default headers for all requests
-     * @param headers - Headers to merge with existing default headers
+     * Sets default headers that will be applied to all outgoing requests.
+     * @param headers An object containing header names and values
      */
     setDefaultHeaders(headers: Record<string, string>): void;
     /**
-     * Gets the cookie jar for manual cookie management
-     * @returns The cookie jar instance
+     * Returns the cookie jar used for managing HTTP cookies.
+     * @returns The CookieJar instance
      */
     getCookieJar(): CookieJar;
     /**
-     * Adds a request interceptor
-     * @param interceptor - Function to intercept requests
+     * Adds a request interceptor to modify requests before they are sent.
+     * @param interceptor The interceptor function to add
      */
     addRequestInterceptor(interceptor: RequestInterceptor): void;
     /**
-     * Adds a response interceptor
-     * @param interceptor - Function to intercept responses
+     * Adds a response interceptor to modify responses after they are received.
+     * @param interceptor The interceptor function to add
      */
     addResponseInterceptor(interceptor: ResponseInterceptor): void;
-    /**
-     * Internal logging method
-     * @private
-     */
+    /** Closes the HTTP agent to properly terminate keep-alive connections. */
+    close(): void;
     private log;
-    /**
-     * Decompresses response body based on content encoding
-     * @private
-     */
     private decompress;
-    /**
-     * Calculates retry delay with exponential backoff and optional jitter
-     * @private
-     */
     private calcDelay;
-    /**
-     * Utility method for sleeping
-     * @private
-     */
     private sleep;
-    /**
-     * Applies request interceptors
-     * @private
-     */
     private applyRequestInterceptors;
-    /**
-     * Applies response interceptors
-     * @private
-     */
     private applyResponseInterceptors;
-    /**
-     * Sends an HTTP request with automatic retry logic and redirect following
-     * @private
-     */
+    private resolveRedirect;
+    private parseRetryAfterMs;
+    private readBodyWithLimit;
     private sendWithRetry;
-    /**
-     * Parses Content-Type header
-     * @private
-     */
     private parseContentType;
-    /**
-     * Parses response body based on content type or responseType
-     * @private
-     */
     private parseResponse;
+    private requestInternal;
     /**
-     * Internal request method with caching and deduplication
-     * @private
-     */
-    private request;
-    /**
-     * Performs a GET request
-     * @template T - Expected response type
-     * @param req Request object containing URL, headers, and parameters
-     * @param responseType Optional type of response to parse: "json" | "text" | "buffer" | "xml"
-     * @returns Promise resolving to the parsed response of the specified type
+     * Performs an HTTP GET request.
+     * @param req The request object containing URL and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
      */
     get<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs a POST request
+     * Performs an HTTP POST request.
+     * @param req The request object containing URL, body, and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
      */
     post<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs a PUT request
+     * Performs an HTTP PUT request.
+     * @param req The request object containing URL, body, and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
      */
     put<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs a DELETE request
+     * Performs an HTTP DELETE request.
+     * @param req The request object containing URL and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
      */
     delete<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs a PATCH request
+     * Performs an HTTP PATCH request.
+     * @param req The request object containing URL, body, and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
      */
     patch<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs a HEAD request
+     * Performs an HTTP HEAD request.
+     * @param req The request object containing URL and headers
+     * @returns A promise that resolves when the request completes
      */
     head(req: RequestInterface): Promise<void>;
     /**
-     * Clears all cached responses
+     * Clears the request cache.
      */
     clearCache(): void;
     /**
-     * Gets request metrics for a specific request
+     * Retrieves performance metrics for a specific request.
+     * @param url The request URL
+     * @param method The HTTP method
+     * @returns The request metrics if available, undefined otherwise
      */
     getMetrics(url: string, method: string): RequestMetrics | undefined;
     /**
-     * Gets statistics about the HTTP client state
+     * Returns current statistics about the HTTP client's state.
+     * @returns An object containing cache size, request counts, and rate limit information
      */
     getStats(): {
         cacheSize: number;
