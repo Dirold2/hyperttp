@@ -58,35 +58,35 @@ export type Response = ObjectResponse | StringResponse;
  */
 export interface RequestInterface {
     /** Set the request path */
-    setPath(path: string): RequestInterface;
+    setPath?(path: string): RequestInterface;
     /** Set the host for the request */
-    setHost(host: string): RequestInterface;
+    setHost?(host: string): RequestInterface;
     /** Get current request headers */
-    getHeaders(): RequestHeaders;
+    getHeaders?(): RequestHeaders;
     /** Replace all headers */
-    setHeaders(headers: RequestHeaders): RequestInterface;
+    setHeaders?(headers: RequestHeaders): RequestInterface;
     /** Add headers to the existing ones */
-    addHeaders(headers: RequestHeaders): RequestInterface;
+    addHeaders?(headers: RequestHeaders): RequestInterface;
     /** Get current query parameters */
-    getQuery(): RequestQuery;
+    getQuery?(): RequestQuery;
     /** Replace all query parameters */
-    setQuery(query: RequestQuery): RequestInterface;
+    setQuery?(query: RequestQuery): RequestInterface;
     /** Add query parameters */
-    addQuery(query: RequestQuery): RequestInterface;
+    addQuery?(query: RequestQuery): RequestInterface;
     /** Get query string representation */
-    getQueryAsString(): string;
+    getQueryAsString?(): string;
     /** Get request body data */
-    getBodyData(): RequestBodyData;
+    getBodyData?(): RequestBodyData;
     /** Get body data as string (e.g., for JSON or URL-encoded) */
-    getBodyDataString(): string;
+    getBodyDataString?(): string;
     /** Replace body data */
-    setBodyData(bodyData: RequestBodyData): RequestInterface;
+    setBodyData?(bodyData: RequestBodyData): RequestInterface;
     /** Add data to the existing body */
-    addBodyData(bodyData: RequestBodyData): RequestInterface;
+    addBodyData?(bodyData: RequestBodyData): RequestInterface;
     /** Get URI (path + query) */
-    getURI(): string;
+    getURI?(): string;
     /** Get full URL including scheme, host, port, path and query */
-    getURL(): string;
+    getURL?(): string;
 }
 /**
  * Interface for a HTTP client
