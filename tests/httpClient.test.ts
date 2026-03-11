@@ -5,7 +5,7 @@ const mockRequest = vi.hoisted(() => vi.fn());
 vi.mock("undici", () => ({
   Agent: class MockAgent {
     compose() {
-      return this; // Return itself for chaining
+      return this;
     }
   },
   request: mockRequest,
@@ -26,7 +26,6 @@ describe("HttpClientImproved", () => {
 
     client = new HttpClientImproved({ maxRetries: 2, cacheTTL: 5000 });
 
-    // Мокаем queue.enqueue, чтобы retry и ошибки отрабатывались корректно
     vi.spyOn(client as any, "queue", "get").mockReturnValue({
       enqueue: async (cb: any) => cb(),
       queuedCount: 0,
@@ -51,11 +50,9 @@ describe("HttpClientImproved", () => {
       port: 443,
     });
 
-    // Первый запрос вызывает undici.request
     await client.get(req);
     expect(mockRequest).toHaveBeenCalledTimes(1);
 
-    // Второй запрос берётся из кеша
     await client.get(req);
     expect(mockRequest).toHaveBeenCalledTimes(1);
   });
@@ -63,7 +60,6 @@ describe("HttpClientImproved", () => {
   it("should retry failed requests", async () => {
     const errorClient = new HttpClientImproved({ maxRetries: 1 });
 
-    // Мокаем queue.enqueue, чтобы callback вызывался напрямую
     vi.spyOn(errorClient as any, "queue", "get").mockReturnValue({
       enqueue: async (cb: any) => cb(),
       queuedCount: 0,
@@ -112,7 +108,6 @@ describe("HttpClientImproved", () => {
     await client.get(req, "json");
     client.clearCache();
 
-    // Новый вызов кеша должен вернуть null
     const cache = (client as any).cache.get("GET:https://example.com:443:");
     expect(cache).toBeNull();
   });

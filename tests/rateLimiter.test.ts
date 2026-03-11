@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { RateLimiter } from "../src"; // поправь путь если нужно
+import { RateLimiter } from "../src";
 
 describe("RateLimiter", () => {
   it("should wait if limit is exceeded", async () => {

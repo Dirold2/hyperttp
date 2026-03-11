@@ -5,7 +5,6 @@ import type { UrlPattern } from "../src";
 describe("UrlExtractor", () => {
   const extractor = new UrlExtractor();
 
-  // Регистрируем Yandex Music
   const yandexPatterns: UrlPattern[] = [
     {
       entity: "track",
