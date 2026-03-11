@@ -6,48 +6,45 @@ export interface RateLimiterConfig {
     maxRequests?: number;
     /** Time window in milliseconds (default: 60000ms / 1 minute) */
     windowMs?: number;
+    /** Maximum array size before aggressive cleanup (default: maxRequests * 2) */
+    maxArraySize?: number;
 }
 /**
  * Implements a sliding window rate limiter to control request frequency.
- * Prevents exceeding a specified number of requests within a time window.
- *
- * @example
- * ```ts
- * const limiter = new RateLimiter({ maxRequests: 10, windowMs: 1000 });
- * await limiter.wait(); // Will delay if rate limit is exceeded
- * // Make your request here
- * ```
  */
 export declare class RateLimiter {
     private timestamps;
-    private max;
-    private window;
-    /**
-     * Creates a new RateLimiter instance
-     * @param config - Configuration for rate limiting behavior
-     */
+    private readonly max;
+    private readonly window;
+    private readonly maxArraySize;
     constructor(config?: RateLimiterConfig);
     /**
+     * Cleans up old timestamps efficiently
+     */
+    private cleanup;
+    /**
      * Waits if necessary to respect the rate limit, then records the current request.
-     * This method should be called before making each request.
-     *
-     * @returns A promise that resolves when it's safe to proceed with the request
-     *
-     * @example
-     * ```ts
-     * await limiter.wait();
-     * const response = await fetch('https://api.example.com');
-     * ```
      */
     wait(): Promise<void>;
     /**
      * Gets the current number of requests in the sliding window
-     * @returns The number of requests made within the current time window
      */
     get currentCount(): number;
     /**
-     * Resets the rate limiter, clearing all recorded timestamps
+     * Remaining requests in current window
+     */
+    get remainingRequests(): number;
+    /**
+     * Milliseconds until next reset
+     */
+    get timeToReset(): number;
+    /**
+     * Resets the rate limiter
      */
     reset(): void;
+    /**
+     * Removes a specific timestamp (для removeToken pattern)
+     */
+    removeToken(timestamp: number): boolean;
 }
 //# sourceMappingURL=RateLimiter.d.ts.map
