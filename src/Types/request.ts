@@ -63,50 +63,36 @@ export type Response = ObjectResponse | StringResponse;
  * Interface for a request object
  */
 export interface RequestInterface {
-  /** Set the request path */
-  setPath(path: string): RequestInterface;
-
-  /** Set the host for the request */
-  setHost(host: string): RequestInterface;
-
-  /** Get current request headers */
-  getHeaders(): RequestHeaders;
-
-  /** Replace all headers */
-  setHeaders(headers: RequestHeaders): RequestInterface;
-
-  /** Add headers to the existing ones */
-  addHeaders(headers: RequestHeaders): RequestInterface;
-
-  /** Get current query parameters */
-  getQuery(): RequestQuery;
-
-  /** Replace all query parameters */
-  setQuery(query: RequestQuery): RequestInterface;
-
-  /** Add query parameters */
-  addQuery(query: RequestQuery): RequestInterface;
-
-  /** Get query string representation */
-  getQueryAsString(): string;
-
-  /** Get request body data */
-  getBodyData(): RequestBodyData;
-
-  /** Get body data as string (e.g., for JSON or URL-encoded) */
-  getBodyDataString(): string;
-
-  /** Replace body data */
-  setBodyData(bodyData: RequestBodyData): RequestInterface;
-
-  /** Add data to the existing body */
-  addBodyData(bodyData: RequestBodyData): RequestInterface;
-
-  /** Get URI (path + query) */
-  getURI(): string;
-
-  /** Get full URL including scheme, host, port, path and query */
-  getURL(): string;
+    /** Set the request path */
+    setPath?(path: string): RequestInterface;
+    /** Set the host for the request */
+    setHost?(host: string): RequestInterface;
+    /** Get current request headers */
+    getHeaders?(): RequestHeaders;
+    /** Replace all headers */
+    setHeaders?(headers: RequestHeaders): RequestInterface;
+    /** Add headers to the existing ones */
+    addHeaders?(headers: RequestHeaders): RequestInterface;
+    /** Get current query parameters */
+    getQuery?(): RequestQuery;
+    /** Replace all query parameters */
+    setQuery?(query: RequestQuery): RequestInterface;
+    /** Add query parameters */
+    addQuery?(query: RequestQuery): RequestInterface;
+    /** Get query string representation */
+    getQueryAsString?(): string;
+    /** Get request body data */
+    getBodyData?(): RequestBodyData;
+    /** Get body data as string (e.g., for JSON or URL-encoded) */
+    getBodyDataString?(): string;
+    /** Replace body data */
+    setBodyData?(bodyData: RequestBodyData): RequestInterface;
+    /** Add data to the existing body */
+    addBodyData?(bodyData: RequestBodyData): RequestInterface;
+    /** Get URI (path + query) */
+    getURI?(): string;
+    /** Get full URL including scheme, host, port, path and query */
+    getURL?(): string;
 }
 
 /**

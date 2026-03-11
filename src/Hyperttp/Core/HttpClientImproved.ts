@@ -1133,7 +1133,7 @@ export default class HttpClientImproved implements HttpClientInterface {
     if (typeof req === "string") {
       const simpleReq: RequestInterface = {
         getURL: () => req,
-        getBodyData: () => undefined,
+        getBodyData: () => undefined as any,
         getHeaders: () => ({}),
       };
       return this.requestInternal<T>("GET", simpleReq, true, responseType);
@@ -1210,7 +1210,7 @@ export default class HttpClientImproved implements HttpClientInterface {
       const client = defaultClient ?? (defaultClient = new HttpClientImproved());
       const simpleReq: RequestInterface = {
         getURL: () => req,
-        getBodyData: () => undefined,
+        getBodyData: () => undefined as any,
         getHeaders: () => ({}),
       };
       return client.delete(simpleReq, responseType);
@@ -1246,7 +1246,7 @@ export default class HttpClientImproved implements HttpClientInterface {
       const client = defaultClient ?? (defaultClient = new HttpClientImproved());
       const simpleReq: RequestInterface = {
         getURL: () => req,
-        getBodyData: () => undefined,
+        getBodyData: () => undefined as any,
         getHeaders: () => ({}),
       };
       return client.head(simpleReq);
