@@ -3,7 +3,7 @@ export {
   QueueManager,
   CacheManager,
   RateLimiter,
-} from "./Core";
-export { default as Request } from "./Request";
-export { PreparedRequest } from "./Request";
-export { default as UrlExtractor } from "./UrlExtractor";
+} from "./Core/index.js";
+export { default as Request } from "./Request.js";
+export { PreparedRequest } from "./Request.js";
+export { default as UrlExtractor } from "./UrlExtractor.js";

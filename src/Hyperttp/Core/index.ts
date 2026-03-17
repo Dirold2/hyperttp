@@ -13,10 +13,10 @@
  * @module http-client
  */
 
-export { default as HttpClientImproved } from "./HttpClientImproved";
-export { QueueManager } from "./QueueManager";
-export { CacheManager } from "./CacheManager";
-export { RateLimiter } from "./RateLimiter";
+export { default as HttpClientImproved } from "./HttpClientImproved.js";
+export { QueueManager } from "./QueueManager.js";
+export { CacheManager } from "./CacheManager.js";
+export { RateLimiter } from "./RateLimiter.js";
 
 export type {
   HttpClientOptions,
@@ -25,7 +25,7 @@ export type {
   RetryOptions,
   LogLevel,
   LoggerFunction,
-} from "./HttpClientImproved";
+} from "../../Types/index.js";
 
-export type { CacheManagerOptions } from "./CacheManager";
-export type { RateLimiterConfig } from "./RateLimiter";
+export type { CacheManagerOptions } from "./CacheManager.js";
+export type { RateLimiterConfig } from "./RateLimiter.js";

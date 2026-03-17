@@ -36,7 +36,6 @@ export class QueueManager {
    * ```
    */
   async enqueue<T>(executor: () => Promise<T>): Promise<T> {
-    // Wait if we've reached the concurrency limit
     if (this.running >= this.maxConcurrent) {
       await new Promise<void>((resolve) => this.queue.push(resolve));
     }
@@ -46,7 +45,6 @@ export class QueueManager {
       return await executor();
     } finally {
       this.running--;
-      // Process next task in queue
       const next = this.queue.shift();
       if (next) next();
     }

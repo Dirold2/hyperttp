@@ -126,7 +126,6 @@ export default class UrlExtractor implements UrlExtractorInterface {
         const result: Record<string, any> = {};
         for (const key in extracted) {
           const value = extracted[key];
-          // Если ожидаем число и включен castNumbers, конвертируем
           if (castNumbers && !isNaN(Number(value))) {
             result[key] = Number(value);
           } else {

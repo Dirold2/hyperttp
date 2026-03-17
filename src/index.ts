@@ -6,6 +6,7 @@ export {
   Request,
   PreparedRequest,
   UrlExtractor,
-} from "./Hyperttp";
+} from "./Hyperttp/index.js";
 
-export type * from "./Types";
+export type * from "./Types/index.js";
+export type * from "./Types/request.js";

@@ -2,11 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HttpClientImproved, Request } from "../src";
 
 const mockRequest = vi.hoisted(() => vi.fn());
+
 vi.mock("undici", () => ({
   Agent: class MockAgent {
-    compose() {
-      return this;
-    }
+    compose() { return this; }
   },
   request: mockRequest,
 }));
@@ -16,12 +15,20 @@ describe("HttpClientImproved", () => {
 
   beforeEach(() => {
     mockRequest.mockReset();
+    
     mockRequest.mockResolvedValue({
       statusCode: 200,
-      headers: { "content-type": "application/json" },
+      statusText: "OK",
+      headers: { "content-type": "application/json" } as any,
+      trailers: {},
+      opaque: false,
+      context: { target: {} } as any,
       body: {
-        arrayBuffer: async () => Buffer.from(JSON.stringify({ result: "ok" })),
-      },
+        [Symbol.asyncIterator]: function* () {
+          yield Buffer.from(JSON.stringify({ result: "ok" }));
+        },
+        arrayBuffer: async () => Buffer.from(JSON.stringify({ result: "ok" })).buffer,
+      } as any,
     });
 
     client = new HttpClientImproved({ maxRetries: 2, cacheTTL: 5000 });
@@ -36,17 +43,18 @@ describe("HttpClientImproved", () => {
   it("should perform GET request and parse JSON", async () => {
     const req = new Request({
       scheme: "https",
-      host: "example.com",
+      host: "httpbin.org",
       port: 443,
     });
     const res = await client.get(req, "json");
     expect(res).toEqual({ result: "ok" });
+    expect(mockRequest).toHaveBeenCalledTimes(1);
   });
 
   it("should cache GET requests", async () => {
     const req = new Request({
       scheme: "https",
-      host: "example.com",
+      host: "httpbin.org",
       port: 443,
     });
 
@@ -70,16 +78,22 @@ describe("HttpClientImproved", () => {
       .mockRejectedValueOnce(new Error("Network error"))
       .mockResolvedValueOnce({
         statusCode: 200,
-        headers: { "content-type": "application/json" },
+        statusText: "OK",
+        headers: { "content-type": "application/json" } as any,
+        trailers: {},
+        opaque: false,
+        context: { target: {} } as any,
         body: {
-          arrayBuffer: async () =>
-            Buffer.from(JSON.stringify({ result: "ok" })),
-        },
+          [Symbol.asyncIterator]: function* () {
+            yield Buffer.from(JSON.stringify({ result: "ok" }));
+          },
+          arrayBuffer: async () => Buffer.from(JSON.stringify({ result: "ok" })).buffer,
+        } as any,
       });
 
     const req = new Request({
       scheme: "https",
-      host: "example.com",
+      host: "httpbin.org",
       port: 443,
     });
     const res = await errorClient.get(req, "json");
@@ -88,10 +102,11 @@ describe("HttpClientImproved", () => {
     expect(mockRequest).toHaveBeenCalledTimes(2);
   });
 
+
   it("should POST data correctly", async () => {
     const req = new Request({
       scheme: "https",
-      host: "example.com",
+      host: "httpbin.org",
       port: 443,
     });
     req.setBodyData({ foo: "bar" });
@@ -102,13 +117,13 @@ describe("HttpClientImproved", () => {
   it("should clear cache", async () => {
     const req = new Request({
       scheme: "https",
-      host: "example.com",
+      host: "httpbin.org",
       port: 443,
     });
     await client.get(req, "json");
     client.clearCache();
 
-    const cache = (client as any).cache.get("GET:https://example.com:443:");
+    const cache = (client as any).cache.get("GET:https://httpbin.org:443/");
     expect(cache).toBeNull();
   });
 });

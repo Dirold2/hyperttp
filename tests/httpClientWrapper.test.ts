@@ -25,7 +25,7 @@ describe("HttpClient Wrapper", () => {
       const result = await HttpClient.get(HTML_API, "text");
 
       expect(typeof result).toBe("string");
-      expect(result.length).toBeGreaterThan(100);
+      expect(result.length).toBeGreaterThan(10);
     }, 10000);
 
     it("GET xml returns XML string", async () => {

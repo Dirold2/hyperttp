@@ -4,15 +4,15 @@
 
 ## Возможности
 
-- Автоматическое объединение одинаковых запросов (deduplication)  
-- LRU-кеширование с TTL  
-- Настраиваемое ограничение скорости (rate limiting)  
-- Управление конкурентными запросами  
-- Экспоненциальные задержки с джиттером при повторных попытках  
-- Поддержка cookie  
-- Автоматический парсинг ответов (JSON/XML/text/buffer)  
-- Автоматическая обработка редиректов  
-- Удобный Fluent API через RequestBuilder  
+- Автоматическое объединение одинаковых запросов (deduplication)
+- LRU-кеширование с TTL
+- Настраиваемое ограничение скорости (rate limiting)
+- Управление конкурентными запросами
+- Экспоненциальные задержки с джиттером при повторных попытках
+- Поддержка cookie
+- Автоматический парсинг ответов (JSON/XML/text/buffer)
+- Автоматическая обработка редиректов
+- Удобный Fluent API через RequestBuilder
 
 ## Установка
 
@@ -21,6 +21,7 @@ npm install hyperttp
 ```
 
 ## Пример использования
+
 ```typescript
 import HttpClientImproved from "hyperttp";
 
@@ -35,7 +36,9 @@ const data = await client.get("https://api.example.com/data");
 console.log(data);
 
 // POST-запрос с JSON-телом
-const postData = await client.post("https://api.example.com/items", { name: "Item 1" });
+const postData = await client.post("https://api.example.com/items", {
+  name: "Item 1",
+});
 console.log(postData);
 
 // Использование Fluent RequestBuilder
@@ -48,18 +51,22 @@ const builderData = await client
 
 console.log(builderData);
 ```
+
 ### Fluent API через RequestBuilder
+
 ```typescript
-client.request("https://api.example.com/data")
-  .get()               // по умолчанию GET
+client
+  .request("https://api.example.com/data")
+  .get() // по умолчанию GET
   .headers({ "X-Test": "123" })
   .query({ page: 1 })
-  .json()              // или .text(), .xml()
+  .json() // или .text(), .xml()
   .send()
   .then(console.log);
 ```
 
 ## Расширенные возможности
+
 - Кеширование: Автоматически кеширует GET/HEAD запросы, с настраиваемым TTL и размером кеша
 
 - Ограничение скорости: Предотвращает перегрузку сервера

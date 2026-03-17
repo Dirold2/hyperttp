@@ -123,7 +123,6 @@ export default class Request implements RequestInterface {
   }
 
   getURL(): string {
-    // Используем URL + searchParams для надёжной сборки
     const base = new URL(this.getURI());
     for (const [key, value] of Object.entries(this.query)) {
       if (value === undefined || value === null) continue;
