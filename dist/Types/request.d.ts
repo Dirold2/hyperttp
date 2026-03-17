@@ -132,5 +132,5 @@ export interface HttpClientOptions {
     timeout?: number;
     responseType?: ResponseType;
 }
-export type ResponseType = "json" | "text" | "buffer" | "xml";
+export type ResponseType = "json" | "text" | "buffer" | "xml" | "stream";
 //# sourceMappingURL=request.d.ts.map

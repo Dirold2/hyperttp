@@ -136,7 +136,6 @@ class Request {
         return `${this.scheme}://${this.host}${portPart}${path}`;
     }
     getURL() {
-        // Используем URL + searchParams для надёжной сборки
         const base = new URL(this.getURI());
         for (const [key, value] of Object.entries(this.query)) {
             if (value === undefined || value === null)

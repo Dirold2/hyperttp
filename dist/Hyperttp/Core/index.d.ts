@@ -12,11 +12,11 @@
  *
  * @module http-client
  */
-export { default as HttpClientImproved } from "./HttpClientImproved";
-export { QueueManager } from "./QueueManager";
-export { CacheManager } from "./CacheManager";
-export { RateLimiter } from "./RateLimiter";
-export type { HttpClientOptions, HttpClientInterface, RequestInterface, RetryOptions, LogLevel, LoggerFunction, } from "./HttpClientImproved";
-export type { CacheManagerOptions } from "./CacheManager";
-export type { RateLimiterConfig } from "./RateLimiter";
+export { default as HttpClientImproved } from "./HttpClientImproved.js";
+export { QueueManager } from "./QueueManager.js";
+export { CacheManager } from "./CacheManager.js";
+export { RateLimiter } from "./RateLimiter.js";
+export type { HttpClientOptions, HttpClientInterface, RequestInterface, RetryOptions, LogLevel, LoggerFunction, } from "../../Types/index.js";
+export type { CacheManagerOptions } from "./CacheManager.js";
+export type { RateLimiterConfig } from "./RateLimiter.js";
 //# sourceMappingURL=index.d.ts.map

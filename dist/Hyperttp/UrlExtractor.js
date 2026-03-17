@@ -106,7 +106,6 @@ class UrlExtractor {
                 const result = {};
                 for (const key in extracted) {
                     const value = extracted[key];
-                    // Если ожидаем число и включен castNumbers, конвертируем
                     if (castNumbers && !isNaN(Number(value))) {
                         result[key] = Number(value);
                     }
