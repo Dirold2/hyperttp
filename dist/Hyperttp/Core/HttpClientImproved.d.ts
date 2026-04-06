@@ -61,7 +61,7 @@ export default class HttpClientImproved implements HttpClientInterface {
     private limiter?;
     private inflight;
     private retryOptions;
-    private defaultHeaders;
+    private baseHeaders;
     private options;
     private requestInterceptors;
     private responseInterceptors;
@@ -138,6 +138,7 @@ export default class HttpClientImproved implements HttpClientInterface {
      * @param redirects - Number of redirects followed so far
      * @returns Promise resolving to the response data
      */
+    private sendOnce;
     private sendWithRetry;
     /**
      * Parses the Content-Type header to extract MIME type and character encoding.
@@ -171,6 +172,7 @@ export default class HttpClientImproved implements HttpClientInterface {
      * @param responseType - Expected response type
      * @returns Promise resolving to the response data
      */
+    private fastRequest;
     private requestInternal;
     /**
      * Makes an HTTP GET request.
@@ -222,7 +224,7 @@ export default class HttpClientImproved implements HttpClientInterface {
      * @param responseType - Expected response type (default: "json")
      * @returns Promise resolving to the response data
      */
-    patch<T = any>(req: RequestInterface, responseType?: ResponseType): Promise<T>;
+    patch<T = any>(req: RequestInterface | string, body?: any, responseType?: ResponseType): Promise<T>;
     /**
      * Makes an HTTP HEAD request.
      * Returns only the status code and headers without the response body.
@@ -238,7 +240,7 @@ export default class HttpClientImproved implements HttpClientInterface {
      * Clears the internal cache of the HTTP client.
      * Removes all cached responses and resets the cache state.
      */
-    clearCache(): void;
+    clearCache(): Promise<void>;
     /**
      * Clears all collected request metrics.
      * Removes performance and timing data from memory.

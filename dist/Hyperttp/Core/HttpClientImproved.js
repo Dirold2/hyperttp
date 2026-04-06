@@ -73,7 +73,10 @@ class HttpClientImproved {
     limiter;
     inflight = new Map();
     retryOptions;
-    defaultHeaders = {};
+    baseHeaders = Object.freeze({
+        Accept: "application/json, text/plain, */*",
+        "User-Agent": "Hyperttp/0.1.0 Node.js",
+    });
     options;
     requestInterceptors = [];
     responseInterceptors = [];
@@ -106,11 +109,10 @@ class HttpClientImproved {
             retryOptions: options?.retryOptions ?? {},
             maxResponseBytes: options?.maxResponseBytes ?? 1024 * 1024,
             verbose: false,
-            enableQueue: options?.enableQueue ?? true,
-            enableRateLimit: options?.enableRateLimit ?? true,
+            enableQueue: options?.enableQueue ?? false,
+            enableRateLimit: options?.enableRateLimit ?? false,
             enableCache: options?.enableCache ?? true,
         };
-        // Lazy initialization - only create components when needed
         if (this.options.enableCache) {
             this.cache = new CacheManager_1.CacheManager({
                 cacheTTL: this.options.cacheTTL,
@@ -131,10 +133,6 @@ class HttpClientImproved {
                 408, 429, 500, 502, 503, 504,
             ],
             jitter: this.options.retryOptions?.jitter ?? true,
-        };
-        this.defaultHeaders = {
-            Accept: "application/json, text/plain, */*",
-            "User-Agent": this.options.userAgent ?? "Hyperttp/0.1.0 Node.js",
         };
         this.agent = new undici_1.Agent({
             connections: 1000,
@@ -274,6 +272,11 @@ class HttpClientImproved {
     async readBodyWithLimit(body, maxBytes = this.options.maxResponseBytes) {
         if (!body)
             return Buffer.alloc(0);
+        // ⚡ максимально быстрый парсинг через arrayBuffer
+        if (body?.arrayBuffer) {
+            const arrayBuffer = await body.arrayBuffer();
+            return Buffer.from(arrayBuffer);
+        }
         if (body[Symbol.asyncIterator]) {
             const chunks = [];
             let total = 0;
@@ -284,10 +287,6 @@ class HttpClientImproved {
                     break;
             }
             return Buffer.concat(chunks);
-        }
-        if (body?.arrayBuffer) {
-            const arrayBuffer = await body.arrayBuffer();
-            return Buffer.from(arrayBuffer);
         }
         if (Buffer.isBuffer(body))
             return body.subarray(0, maxBytes);
@@ -323,11 +322,103 @@ class HttpClientImproved {
      * @param redirects - Number of redirects followed so far
      * @returns Promise resolving to the response data
      */
+    async sendOnce(method, url, headers, body, metrics, redirects = 0) {
+        let lastError;
+        try {
+            if (this.limiter && this.options.enableRateLimit) {
+                await this.limiter.wait();
+            }
+            const finalConfig = await this.applyRequestInterceptors({
+                url,
+                method,
+                headers,
+                body,
+            });
+            const controller = new AbortController();
+            const timeout = this.options.timeout;
+            const timer = setTimeout(() => controller.abort(), timeout);
+            try {
+                const res = await (0, undici_1.request)(finalConfig.url, {
+                    method: finalConfig.method,
+                    headers: finalConfig.headers,
+                    body: finalConfig.body,
+                    dispatcher: this.agent,
+                    signal: controller.signal,
+                });
+                if (method === "HEAD") {
+                    clearTimeout(timer);
+                    return {
+                        status: res.statusCode,
+                        headers: res.headers,
+                        body: Buffer.alloc(0),
+                        url: finalConfig.url,
+                    };
+                }
+                clearTimeout(timer);
+                const buf = await this.readBodyWithLimit(res.body);
+                let response = await this.applyResponseInterceptors({
+                    status: res.statusCode,
+                    headers: res.headers,
+                    body: buf,
+                    url: finalConfig.url,
+                });
+                if (!this.options.validateStatus(response.status)) {
+                    throw new Types_1.HttpClientError(`Request failed with status ${response.status}`, response.status, undefined, finalConfig.url, finalConfig.method);
+                }
+                if (this.options.followRedirects &&
+                    [301, 302, 303, 307, 308].includes(response.status) &&
+                    redirects < (this.options.maxRedirects ?? 5)) {
+                    const location = response.headers.location;
+                    if (location) {
+                        const nextUrl = this.resolveRedirect(location, finalConfig.url);
+                        const redirectMethod = response.status === 303 ? "GET" : method;
+                        const nextHeaders = { ...headers };
+                        let nextBody = body;
+                        if (redirectMethod === "GET") {
+                            nextBody = undefined;
+                            delete nextHeaders["content-type"];
+                            delete nextHeaders["Content-Type"];
+                            delete nextHeaders["content-length"];
+                            delete nextHeaders["Content-Length"];
+                        }
+                        this.log("debug", `Redirecting to ${nextUrl}`, {
+                            originalUrl: finalConfig.url,
+                            status: response.status,
+                        });
+                        return this.sendOnce(redirectMethod, nextUrl, nextHeaders, nextBody, metrics, redirects + 1);
+                    }
+                }
+                return response;
+            }
+            catch (timeoutErr) {
+                clearTimeout(timer);
+                if (timeoutErr?.name === "AbortError")
+                    throw new Types_1.TimeoutError(url, timeout);
+                throw timeoutErr;
+            }
+            finally {
+                clearTimeout(timer);
+            }
+        }
+        catch (err) {
+            lastError = err;
+            this.log("error", `Request error ${method} ${url}: ${err?.message ?? String(err)}`, {
+                error: err,
+            });
+            metrics && (metrics.retries += 1);
+        }
+        if (lastError instanceof Types_1.HttpClientError)
+            throw lastError;
+        throw new Types_1.HttpClientError(`Request failed after 1 attempt`, undefined, lastError instanceof Error ? lastError : undefined, url, method);
+    }
     async sendWithRetry(method, url, headers, body, metrics, redirects = 0) {
         let lastError;
+        if (this.retryOptions.maxRetries === 0) {
+            return this.sendOnce(method, url, headers, body, metrics, redirects);
+        }
         for (let attempt = 0; attempt <= this.retryOptions.maxRetries; attempt++) {
             try {
-                if (this.limiter) {
+                if (this.limiter && this.options.enableRateLimit) {
                     await this.limiter.wait();
                 }
                 const finalConfig = await this.applyRequestInterceptors({
@@ -484,8 +575,7 @@ class HttpClientImproved {
      * @returns Parsed response data
      */
     async parseResponse(res, responseType) {
-        const { type, charset } = this.parseContentType(res.headers["content-type"]);
-        const text = res.body.toString(charset);
+        const { type } = this.parseContentType(res.headers["content-type"]);
         const finalType = responseType ?? (type.includes("application/json") ? "json" : "text");
         try {
             switch (finalType) {
@@ -493,21 +583,21 @@ class HttpClientImproved {
                     return JSON.parse(res.body.toString("utf8"));
                 case "xml": {
                     try {
-                        const jsonData = JSON.parse(text);
+                        const jsonData = JSON.parse(res.body.toString("utf8"));
                         return new fast_xml_parser_1.XMLBuilder({ format: true }).build({ root: jsonData });
                     }
                     catch {
-                        return text;
+                        return res.body.toString("utf8");
                     }
                 }
                 case "text":
-                    return text;
+                    return res.body.toString("utf8");
                 case "buffer":
                     return res.body;
                 case "stream":
                     throw new Error("Stream mode requires raw response. Use stream() method.");
                 default:
-                    return text;
+                    return res.body.toString("utf8");
             }
         }
         catch (err) {
@@ -525,10 +615,7 @@ class HttpClientImproved {
     async requestInternalWithoutCache(method, req, responseType) {
         const url = req.getURL();
         const rawBody = req.getBodyData();
-        const headers = {
-            ...this.defaultHeaders,
-            ...req.getHeaders(),
-        };
+        const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
         const isBodyAllowed = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
         let body;
         const contentType = headers["content-type"] || headers["Content-Type"] || "";
@@ -559,18 +646,35 @@ class HttpClientImproved {
             url,
             method,
         };
-        const result = await (this.queue.enqueue(async () => {
-            const res = await this.sendWithRetry(method, url, headers, body, metrics);
-            metrics.statusCode = res.status;
-            metrics.bytesReceived = res.body.length;
-            metrics.bytesSent =
-                body instanceof Buffer ? body.length : Buffer.byteLength(body || "");
-            if (method === "HEAD") {
-                return { status: res.status, headers: res.headers };
-            }
-            const parsed = await this.parseResponse(res, responseType);
-            return parsed;
-        }) ?? Promise.resolve(undefined));
+        const result = await (this.queue && this.options.enableQueue
+            ? this.queue.enqueue(async () => {
+                const res = await this.sendWithRetry(method, url, headers, body, metrics);
+                metrics.statusCode = res.status;
+                metrics.bytesReceived = res.body.length;
+                metrics.bytesSent =
+                    body instanceof Buffer
+                        ? body.length
+                        : Buffer.byteLength(body || "");
+                if (method === "HEAD") {
+                    return { status: res.status, headers: res.headers };
+                }
+                const parsed = await this.parseResponse(res, responseType);
+                return parsed;
+            })
+            : (async () => {
+                const res = await this.sendWithRetry(method, url, headers, body, metrics);
+                metrics.statusCode = res.status;
+                metrics.bytesReceived = res.body.length;
+                metrics.bytesSent =
+                    body instanceof Buffer
+                        ? body.length
+                        : Buffer.byteLength(body || "");
+                if (method === "HEAD") {
+                    return { status: res.status, headers: res.headers };
+                }
+                const parsed = await this.parseResponse(res, responseType);
+                return parsed;
+            })());
         metrics.endTime = Date.now();
         metrics.duration = metrics.endTime - metrics.startTime;
         this.requestMetrics.set(url, metrics);
@@ -586,16 +690,50 @@ class HttpClientImproved {
      * @param responseType - Expected response type
      * @returns Promise resolving to the response data
      */
+    async fastRequest(method, req, responseType) {
+        const url = req.getURL();
+        const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
+        const body = req.getBodyData();
+        let finalBody;
+        if (body == null) {
+            finalBody = undefined;
+        }
+        else if (typeof body === "string" || Buffer.isBuffer(body)) {
+            finalBody = body;
+        }
+        else {
+            finalBody = JSON.stringify(body);
+        }
+        const res = await (0, undici_1.request)(url, {
+            method,
+            headers,
+            body: finalBody,
+            dispatcher: this.agent,
+        });
+        if (responseType === "json") {
+            return res.body.json();
+        }
+        if (responseType === "text") {
+            const text = await res.body.text();
+            return text;
+        }
+        return Buffer.from(await res.body.arrayBuffer());
+    }
     async requestInternal(method, req, useCache = true, responseType) {
-        if (this.options.cacheTTL === 0) {
+        if (!this.cache &&
+            !this.options.enableQueue &&
+            !this.options.enableRateLimit &&
+            this.retryOptions.maxRetries === 0 &&
+            this.requestInterceptors.length === 0 &&
+            this.responseInterceptors.length === 0) {
+            return this.fastRequest(method, req, responseType);
+        }
+        if (this.options.cacheTTL === 0 || this.options.enableCache === false) {
             return this.requestInternalWithoutCache(method, req, responseType);
         }
         const url = req.getURL();
         const rawBody = req.getBodyData();
-        const headers = {
-            ...this.defaultHeaders,
-            ...req.getHeaders(),
-        };
+        const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
         const isBodyAllowed = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
         let body;
         const contentType = headers["content-type"] || headers["Content-Type"] || "";
@@ -615,18 +753,21 @@ class HttpClientImproved {
                     headers["Content-Type"] = "application/json; charset=utf-8";
             }
         }
-        const bodyHash = this.hashBody(body);
-        const cacheKey = (0, crypto_1.createHash)("sha1")
-            .update(method + url + bodyHash + responseType)
-            .digest("hex");
-        if (this.options.cacheMethods.includes(method) && useCache && this.cache) {
-            const cached = this.cache.get(cacheKey);
-            if (cached) {
+        let cacheKey;
+        if (this.cache && useCache) {
+            const bodyHash = this.hashBody(body);
+            cacheKey = (0, crypto_1.createHash)("sha1")
+                .update(method + url + bodyHash + responseType)
+                .digest("hex");
+        }
+        if (cacheKey && this.options.cacheMethods.includes(method) && useCache && this.cache) {
+            const cached = await this.cache.get(cacheKey);
+            if (cached != null) {
                 this.log("debug", `Cache hit for ${url}`);
                 return cached;
             }
         }
-        if (this.inflight.has(cacheKey)) {
+        if (cacheKey && this.inflight.has(cacheKey)) {
             this.log("debug", `Deduplicating request for ${url}`);
             return this.inflight.get(cacheKey);
         }
@@ -641,33 +782,55 @@ class HttpClientImproved {
                 cached: false,
                 url,
                 method,
-                bodyHash,
             };
             try {
                 this.log("debug", `Starting request: ${method} ${url}`);
-                const result = await this.queue.enqueue(async () => {
-                    const res = await this.sendWithRetry(method, url, headers, body, metrics);
-                    metrics.statusCode = res.status;
-                    metrics.bytesReceived = res.body.length;
-                    metrics.bytesSent =
-                        body instanceof Buffer
-                            ? body.length
-                            : Buffer.byteLength(body || "");
-                    if (method === "HEAD") {
-                        return { status: res.status, headers: res.headers };
-                    }
-                    const parsed = await this.parseResponse(res, responseType);
-                    if (this.options.cacheMethods.includes(method) &&
-                        useCache &&
-                        this.cache) {
-                        this.cache.set(cacheKey, parsed);
-                        metrics.cached = true;
-                    }
-                    return parsed;
-                });
+                const result = await (this.queue && this.options.enableQueue
+                    ? this.queue.enqueue(async () => {
+                        const res = await this.sendWithRetry(method, url, headers, body, metrics);
+                        metrics.statusCode = res.status;
+                        metrics.bytesReceived = res.body.length;
+                        metrics.bytesSent =
+                            body instanceof Buffer
+                                ? body.length
+                                : Buffer.byteLength(body || "");
+                        if (method === "HEAD") {
+                            return { status: res.status, headers: res.headers };
+                        }
+                        const parsed = await this.parseResponse(res, responseType);
+                        if (cacheKey &&
+                            this.options.cacheMethods.includes(method) &&
+                            useCache &&
+                            this.cache) {
+                            this.cache.set(cacheKey, parsed);
+                            metrics.cached = true;
+                        }
+                        return parsed;
+                    })
+                    : (async () => {
+                        const res = await this.sendWithRetry(method, url, headers, body, metrics);
+                        metrics.statusCode = res.status;
+                        metrics.bytesReceived = res.body.length;
+                        metrics.bytesSent =
+                            body instanceof Buffer
+                                ? body.length
+                                : Buffer.byteLength(body || "");
+                        if (method === "HEAD") {
+                            return { status: res.status, headers: res.headers };
+                        }
+                        const parsed = await this.parseResponse(res, responseType);
+                        if (cacheKey &&
+                            this.options.cacheMethods.includes(method) &&
+                            useCache &&
+                            this.cache) {
+                            await this.cache.set(cacheKey, parsed);
+                            metrics.cached = true;
+                        }
+                        return parsed;
+                    })());
                 metrics.endTime = Date.now();
                 metrics.duration = metrics.endTime - metrics.startTime;
-                this.requestMetrics.set(cacheKey, metrics);
+                this.requestMetrics.set(cacheKey || url, metrics);
                 this.trimMetrics();
                 this.log("info", `${method} ${url} completed in ${metrics.duration}ms`, metrics);
                 return result;
@@ -675,15 +838,17 @@ class HttpClientImproved {
             catch (error) {
                 metrics.endTime = Date.now();
                 metrics.duration = metrics.endTime - metrics.startTime;
-                this.requestMetrics.set(cacheKey, metrics);
+                this.requestMetrics.set(cacheKey || url, metrics);
                 this.trimMetrics();
                 throw error;
             }
             finally {
-                this.inflight.delete(cacheKey);
+                if (cacheKey)
+                    this.inflight.delete(cacheKey);
             }
         })();
-        this.inflight.set(cacheKey, promise);
+        if (cacheKey)
+            this.inflight.set(cacheKey, promise);
         return promise;
     }
     /**
@@ -762,21 +927,37 @@ class HttpClientImproved {
             };
             return this.stream(simpleReq);
         }
-        return this.queue.enqueue(async function () {
-            const url = req.getURL();
-            const headers = { ...this.defaultHeaders, ...req.getHeaders() };
-            const response = await (0, undici_1.request)(url, {
-                method: "GET",
-                headers,
-                dispatcher: this.agent,
-            });
-            return {
-                status: response.statusCode,
-                headers: response.headers,
-                body: response.body,
-                url,
-            };
-        }.bind(this));
+        return (this.queue && this.options.enableQueue
+            ? this.queue.enqueue(async function () {
+                const url = req.getURL();
+                const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
+                const response = await (0, undici_1.request)(url, {
+                    method: "GET",
+                    headers,
+                    dispatcher: this.agent,
+                });
+                return {
+                    status: response.statusCode,
+                    headers: response.headers,
+                    body: response.body,
+                    url,
+                };
+            }.bind(this))
+            : async function () {
+                const url = req.getURL();
+                const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
+                const response = await (0, undici_1.request)(url, {
+                    method: "GET",
+                    headers,
+                    dispatcher: this.agent,
+                });
+                return {
+                    status: response.statusCode,
+                    headers: response.headers,
+                    body: response.body,
+                    url,
+                };
+            }.bind(this)());
     }
     /**
      * Makes an HTTP DELETE request.
@@ -805,7 +986,15 @@ class HttpClientImproved {
      * @param responseType - Expected response type (default: "json")
      * @returns Promise resolving to the response data
      */
-    patch(req, responseType = "json") {
+    patch(req, body, responseType = "json") {
+        if (typeof req === "string") {
+            const simpleReq = {
+                getURL: () => req,
+                getBodyData: () => body,
+                getHeaders: () => ({ "Content-Type": "application/json" }),
+            };
+            return this.requestInternal("PATCH", simpleReq, false, responseType);
+        }
         return this.requestInternal("PATCH", req, false, responseType);
     }
     /**
@@ -830,9 +1019,9 @@ class HttpClientImproved {
      * Clears the internal cache of the HTTP client.
      * Removes all cached responses and resets the cache state.
      */
-    clearCache() {
+    async clearCache() {
         if (this.cache) {
-            this.cache.clear();
+            await this.cache.clear();
             this.log("info", "Cache cleared");
         }
     }
@@ -877,9 +1066,15 @@ class HttpClientImproved {
         return {
             cacheSize: this.cache?.size ?? 0,
             inflightRequests: this.inflight.size,
-            queuedRequests: this.queue.queuedCount ?? 0,
-            activeRequests: this.queue.activeCount ?? 0,
-            currentRateLimit: this.limiter?.currentCount ?? 0,
+            queuedRequests: this.queue && this.options.enableQueue
+                ? (this.queue.queuedCount ?? 0)
+                : 0,
+            activeRequests: this.queue && this.options.enableQueue
+                ? (this.queue.activeCount ?? 0)
+                : 0,
+            currentRateLimit: this.limiter && this.options.enableRateLimit
+                ? (this.limiter.currentCount ?? 0)
+                : 0,
             metricsSize: this.requestMetrics.size,
         };
     }
@@ -1034,13 +1229,13 @@ class RequestBuilder {
                 }
                 return client.get(req, this._responseType);
             case "POST":
-                return client.post(req, undefined, this._responseType);
+                return client.post(req, this._body, this._responseType);
             case "PUT":
-                return client.put(req, this._responseType);
+                return client.put(req, this._body, this._responseType);
             case "DELETE":
                 return client.delete(req, this._responseType);
             case "PATCH":
-                return client.patch(req, this._responseType);
+                return client.patch(req, this._body, this._responseType);
             default:
                 if (this._responseType === "stream") {
                     return client.stream(req);
