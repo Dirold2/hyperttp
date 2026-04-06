@@ -1,35 +1,61 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  mockRequest: vi.fn(),
+}));
+
+vi.mock("undici", async () => {
+  const actual = await vi.importActual("undici");
+  return {
+    ...actual,
+    request: mocks.mockRequest,
+    Agent: class MockAgent {
+      constructor() {}
+      dispatch() {
+        return true;
+      }
+    },
+  };
+});
+
 import { HttpClientImproved, Request } from "../src";
 
-const mockRequest = vi.hoisted(() => vi.fn());
+function createMockBody(data: any) {
+  const jsonStr = JSON.stringify(data);
+  const buffer = Buffer.from(jsonStr);
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      yield buffer;
+    },
+    arrayBuffer: async () => {
+      // Return a fresh ArrayBuffer containing only the JSON data
+      const uint8 = new Uint8Array(buffer);
+      return uint8.buffer.slice(uint8.byteOffset, uint8.byteOffset + uint8.byteLength);
+    },
+    text: async () => jsonStr,
+    json: async () => data,
+  };
+}
 
-vi.mock("undici", () => ({
-  Agent: class MockAgent {
-    compose() { return this; }
-  },
-  request: mockRequest,
-}));
+function createMockResponse(data: any, status = 200, headers = { "content-type": "application/json" }) {
+  return {
+    statusCode: status,
+    statusText: status === 200 ? "OK" : "Error",
+    headers: headers as any,
+    trailers: {},
+    opaque: false,
+    context: { target: {} } as any,
+    body: createMockBody(data),
+  };
+}
 
 describe("HttpClientImproved", () => {
   let client: HttpClientImproved;
 
   beforeEach(() => {
-    mockRequest.mockReset();
-    
-    mockRequest.mockResolvedValue({
-      statusCode: 200,
-      statusText: "OK",
-      headers: { "content-type": "application/json" } as any,
-      trailers: {},
-      opaque: false,
-      context: { target: {} } as any,
-      body: {
-        [Symbol.asyncIterator]: function* () {
-          yield Buffer.from(JSON.stringify({ result: "ok" }));
-        },
-        arrayBuffer: async () => Buffer.from(JSON.stringify({ result: "ok" })).buffer,
-      } as any,
-    });
+    mocks.mockRequest.mockReset();
+
+    mocks.mockRequest.mockResolvedValue(createMockResponse({ result: "ok" }));
 
     client = new HttpClientImproved({ maxRetries: 2, cacheTTL: 5000 });
 
@@ -48,7 +74,7 @@ describe("HttpClientImproved", () => {
     });
     const res = await client.get(req, "json");
     expect(res).toEqual({ result: "ok" });
-    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.mockRequest).toHaveBeenCalledTimes(1);
   });
 
   it("should cache GET requests", async () => {
@@ -59,10 +85,10 @@ describe("HttpClientImproved", () => {
     });
 
     await client.get(req);
-    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.mockRequest).toHaveBeenCalledTimes(1);
 
     await client.get(req);
-    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.mockRequest).toHaveBeenCalledTimes(1);
   });
 
   it("should retry failed requests", async () => {
@@ -74,22 +100,9 @@ describe("HttpClientImproved", () => {
       activeCount: 0,
     });
 
-    mockRequest
+    mocks.mockRequest
       .mockRejectedValueOnce(new Error("Network error"))
-      .mockResolvedValueOnce({
-        statusCode: 200,
-        statusText: "OK",
-        headers: { "content-type": "application/json" } as any,
-        trailers: {},
-        opaque: false,
-        context: { target: {} } as any,
-        body: {
-          [Symbol.asyncIterator]: function* () {
-            yield Buffer.from(JSON.stringify({ result: "ok" }));
-          },
-          arrayBuffer: async () => Buffer.from(JSON.stringify({ result: "ok" })).buffer,
-        } as any,
-      });
+      .mockResolvedValueOnce(createMockResponse({ result: "ok" }));
 
     const req = new Request({
       scheme: "https",
@@ -99,9 +112,8 @@ describe("HttpClientImproved", () => {
     const res = await errorClient.get(req, "json");
 
     expect(res).toEqual({ result: "ok" });
-    expect(mockRequest).toHaveBeenCalledTimes(2);
+    expect(mocks.mockRequest).toHaveBeenCalledTimes(2);
   });
-
 
   it("should POST data correctly", async () => {
     const req = new Request({
@@ -123,7 +135,9 @@ describe("HttpClientImproved", () => {
     await client.get(req, "json");
     client.clearCache();
 
-    const cache = (client as any).cache.get("GET:https://httpbin.org:443/");
-    expect(cache).toBeNull();
+    const cache = await (client as any).cache.get(
+      "GET:https://httpbin.org:443/",
+    );
+    expect(cache).toBeUndefined();
   });
 });

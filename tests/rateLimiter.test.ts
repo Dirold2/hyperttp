@@ -12,7 +12,7 @@ describe("RateLimiter", () => {
     };
 
     await Promise.all([task(), task(), task()]);
-    
+
     expect(times.length).toBe(3);
     expect(times[2] - times[0]).toBeGreaterThanOrEqual(90);
   });
@@ -29,7 +29,7 @@ describe("RateLimiter", () => {
 
   it("cleanup removes old timestamps", async () => {
     const limiter = new RateLimiter({ maxRequests: 2, windowMs: 50 });
-    limiter['timestamps'] = [Date.now() - 60];
+    limiter["timestamps"] = [Date.now() - 60];
     await limiter.wait();
     expect(limiter.currentCount).toBe(1);
   });
@@ -51,7 +51,7 @@ describe("RateLimiter", () => {
   it("removeToken works", async () => {
     const limiter = new RateLimiter({ maxRequests: 2 });
     const ts = Date.now();
-    limiter['timestamps'].push(ts);
+    limiter["timestamps"].push(ts);
     expect(limiter.removeToken(ts)).toBe(true);
     expect(limiter.currentCount).toBe(0);
   });

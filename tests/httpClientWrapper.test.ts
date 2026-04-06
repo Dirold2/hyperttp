@@ -83,7 +83,7 @@ describe("HttpClient Wrapper", () => {
       }, 10000);
 
       it("text responseType", async () => {
-        const result = await HttpClient.request(HTML_API).text().send();
+        const result = await HttpClient.request(HTML_API).text().send();;
         expect(typeof result).toBe("string");
       }, 10000);
 

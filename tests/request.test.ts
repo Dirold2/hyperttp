@@ -107,8 +107,10 @@ describe("PreparedRequest class", () => {
   });
 
   it("should handle PreparedRequest with root path and query params", () => {
-    const prepReq = new PreparedRequest("https://api.example.com/?q=test&page=1");
-    
+    const prepReq = new PreparedRequest(
+      "https://api.example.com/?q=test&page=1",
+    );
+
     expect(prepReq.getQuery()).toEqual({ q: "test", page: "1" });
     expect(prepReq.getURI()).toBe("https://api.example.com:443");
     expect(prepReq.getHeaders()).toEqual({});
@@ -116,32 +118,34 @@ describe("PreparedRequest class", () => {
 
   it("should handle PreparedRequest with custom port", () => {
     const prepReq = new PreparedRequest("https://api.example.com:8080/v1");
-    
+
     expect(prepReq.getURI()).toBe("https://api.example.com:8080/v1");
     expect(prepReq.getHeaders()).toEqual({});
   });
 
   it("should handle PreparedRequest with root path only", () => {
     const prepReq = new PreparedRequest("https://api.example.com/");
-    
+
     expect(prepReq.getURI()).toBe("https://api.example.com:443");
     expect(prepReq.getQuery()).toEqual({});
   });
 
   it("should handle PreparedRequest with complex query parameters", () => {
-    const prepReq = new PreparedRequest("https://api.example.com?foo=bar&baz=qux&num=42");
-    
+    const prepReq = new PreparedRequest(
+      "https://api.example.com?foo=bar&baz=qux&num=42",
+    );
+
     expect(prepReq.getQuery()).toEqual({ foo: "bar", baz: "qux", num: "42" });
     expect(prepReq.getQueryAsString()).toBe("?foo=bar&baz=qux&num=42");
   });
 
   it("should handle PreparedRequest body data methods", () => {
     const prepReq = new PreparedRequest("https://api.example.com");
-    
+
     prepReq.setBodyData({ test: "value" });
     expect(prepReq.getBodyData()).toEqual({ test: "value" });
     expect(prepReq.getBodyDataString()).toBe("test=value");
-    
+
     prepReq.addBodyData({ another: "data" });
     expect(prepReq.getBodyData()).toEqual({ test: "value", another: "data" });
     expect(prepReq.getBodyDataString()).toBe("test=value&another=data");

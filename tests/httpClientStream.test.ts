@@ -68,7 +68,6 @@ describe("HttpClientImproved", () => {
 
       expect(chunks.length).toBeGreaterThan(0);
       expect(totalBytes).toBeGreaterThan(10);
-      console.log(`Stream: ${chunks.length} чанков, ${totalBytes} байт`);
     }, 15000);
   });
 
@@ -102,7 +101,6 @@ describe("HttpClientImproved", () => {
 
         expect(true).toBe(false);
       } catch (error) {
-
         expect(error).toBeDefined();
       }
     }, 2000);
@@ -121,7 +119,6 @@ describe("HttpClientImproved", () => {
 
         expect(true).toBe(false);
       } catch (error) {
-
         expect(error).toBeDefined();
       }
     }, 2000);
@@ -156,8 +153,7 @@ describe("HttpClientImproved", () => {
 
       await Promise.all(urls.map((url) => client.get(url)));
       const duration = Date.now() - start;
-
-      console.log(`5 параллельных запросов: ${duration}ms`);
+;
       expect(duration).toBeLessThan(3000);
     }, 10000);
   });
