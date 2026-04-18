@@ -1,69 +1,55 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const tough_cookie_1 = require("tough-cookie");
 const undici_1 = require("undici");
 const undici_2 = require("http-cookie-agent/undici");
+const zlib = __importStar(require("zlib"));
+const util_1 = require("util");
 const fast_xml_parser_1 = require("fast-xml-parser");
-const url_1 = require("url");
-const crypto_1 = require("crypto");
 const CacheManager_1 = require("./CacheManager");
 const QueueManager_1 = require("./QueueManager");
 const RateLimiter_1 = require("./RateLimiter");
 const Types_1 = require("../../Types");
-let defaultClient = null;
+const RequestBuilder_1 = require("./RequestBuilder");
+const gunzip = (0, util_1.promisify)(zlib.gunzip);
+const inflate = (0, util_1.promisify)(zlib.inflate);
+const brotliDecompress = (0, util_1.promisify)(zlib.brotliDecompress);
 /**
- * @ru
- * Улучшенный HTTP-клиент с кэшированием, ограничением скорости, логикой повторных попыток и расширенными функциями.
- * Предоставляет надежный интерфейс для выполнения HTTP-запросов с автоматической обработкой
- * распространенных паттернов, таких как повторные попытки, кэширование и перехват запросов/ответов.
- * @en
- * Enhanced HTTP client with caching, rate limiting, retry logic, and advanced features.
- * Provides a robust interface for making HTTP requests with automatic handling of
- * common patterns like retries, caching, and request/response interception.
- *
- * @example
- * ```ts
- * const client = new HttpClientImproved({
- *   timeout: 10000,
- *   maxRetries: 3,
- *   cacheTTL: 300000,
- *   rateLimit: { maxRequests: 100, windowMs: 60000 }
- * });
- *
- * const response = await client.get('https://api.example.com/data');
- * ```
- *
- * @example
- * ```ts
- * // Using the fluent request builder
- * const client = new HttpClientImproved();
- * const response = await client.request('https://api.example.com/data')
- *   .headers({ 'Authorization': 'Bearer token' })
- *   .json()
- *   .send();
- * ```
- *
- * @example
- * ```ts
- * // Using RequestInterface for complex requests
- * import { RequestInterface } from './src';
- *
- * class ApiRequest implements RequestInterface {
- *   constructor(
- *     private url: string,
- *     private headers: Record<string, string> = {},
- *     private body?: any
- *   ) {}
- *
- *   getURL(): string { return this.url; }
- *   getHeaders(): Record<string, string> { return this.headers; }
- *   getBodyData(): any { return this.body; }
- * }
- *
- * const client = new HttpClientImproved();
- * const request = new ApiRequest('https://api.example.com/data');
- * const response = await client.get(request);
- * ```
+ * Advanced HTTP client with built-in caching, rate limiting, request queuing,
+ * automatic retries, cookie management, and response decompression.
  */
 class HttpClientImproved {
     cookieJar = new tough_cookie_1.CookieJar();
@@ -73,14 +59,15 @@ class HttpClientImproved {
     limiter;
     inflight = new Map();
     retryOptions;
-    baseHeaders = Object.freeze({
-        Accept: "application/json, text/plain, */*",
-        "User-Agent": "Hyperttp/0.1.0 Node.js",
-    });
+    defaultHeaders = {};
     options;
     requestInterceptors = [];
     responseInterceptors = [];
     requestMetrics = new Map();
+    /**
+     * Creates a new instance of HttpClientImproved.
+     * @param options Optional configuration options for the HTTP client
+     */
     constructor(options) {
         this.options = {
             timeout: options?.timeout ?? 15000,
@@ -126,13 +113,18 @@ class HttpClientImproved {
             this.limiter = new RateLimiter_1.RateLimiter(this.options.rateLimit);
         }
         this.retryOptions = {
-            maxRetries: this.options.maxRetries,
+            maxRetries: this.options.maxRetries ?? 5,
             baseDelay: this.options.retryOptions?.baseDelay ?? 1000,
             maxDelay: this.options.retryOptions?.maxDelay ?? 30000,
             retryStatusCodes: this.options.retryOptions?.retryStatusCodes ?? [
                 408, 429, 500, 502, 503, 504,
             ],
             jitter: this.options.retryOptions?.jitter ?? true,
+        };
+        this.defaultHeaders = {
+            Accept: "application/json, text/plain, */*",
+            "Accept-Encoding": "gzip, deflate, br",
+            "User-Agent": this.options.userAgent ?? "Hyperttp/0.1.0 Node.js",
         };
         this.agent = new undici_1.Agent({
             connections: 1000,
@@ -144,97 +136,85 @@ class HttpClientImproved {
             },
         });
     }
+    /**
+     * Sets default headers that will be applied to all outgoing requests.
+     * @param headers An object containing header names and values
+     */
+    setDefaultHeaders(headers) {
+        Object.assign(this.defaultHeaders, headers);
+    }
+    /**
+     * Returns the cookie jar used for managing HTTP cookies.
+     * @returns The CookieJar instance
+     */
+    getCookieJar() {
+        return this.cookieJar;
+    }
+    /**
+     * Adds a request interceptor to modify requests before they are sent.
+     * @param interceptor The interceptor function to add
+     */
+    addRequestInterceptor(interceptor) {
+        this.requestInterceptors.push(interceptor);
+    }
+    /**
+     * Adds a response interceptor to modify responses after they are received.
+     * @param interceptor The interceptor function to add
+     */
+    addResponseInterceptor(interceptor) {
+        this.responseInterceptors.push(interceptor);
+    }
+    /** Closes the HTTP agent to properly terminate keep-alive connections. */
+    close() {
+        this.agent.close();
+    }
     log(level, msg, meta) {
-        if (!this.options.logger)
-            return;
-        const minLevel = process.env.NODE_ENV === "production" ? "warn" : "info";
-        const levels = ["debug", "info", "warn", "error"];
-        const currentLevelIndex = levels.indexOf(level);
-        const minLevelIndex = levels.indexOf(minLevel);
-        if (currentLevelIndex < minLevelIndex)
-            return;
-        if (this.options.verbose || level !== "info") {
-            this.options.logger(level, msg, meta);
+        if (this.options.verbose) {
+            if (this.options.logger)
+                this.options.logger(level, msg, meta);
         }
     }
-    /**
-     * Creates a hash of the request body for cache key generation.
-     * @param body - Request body (string or Buffer)
-     * @returns SHA1 hash of the body, truncated to 8 characters
-     */
-    hashBody(body) {
-        if (!body)
-            return "";
-        if (typeof body === "string")
-            body = Buffer.from(body, "utf-8");
-        return (0, crypto_1.createHash)("sha1").update(body).digest("hex").slice(0, 8);
+    async decompress(buf, enc, charset = "utf-8") {
+        if (!enc)
+            return buf.toString(charset);
+        try {
+            switch (enc.toLowerCase()) {
+                case "gzip":
+                    return (await gunzip(buf)).toString(charset);
+                case "deflate":
+                    return (await inflate(buf)).toString(charset);
+                case "br":
+                    return (await brotliDecompress(buf)).toString(charset);
+                default:
+                    return buf.toString(charset);
+            }
+        }
+        catch (error) {
+            this.log("error", `Decompression failed for encoding ${enc}`, error);
+            return buf.toString(charset);
+        }
     }
-    /**
-     * Calculates the delay for retry attempts using exponential backoff.
-     * @param attempt - Current retry attempt number (0-based)
-     * @returns Delay in milliseconds
-     */
     calcDelay(attempt) {
         const base = Math.min(this.retryOptions.baseDelay * 2 ** attempt, this.retryOptions.maxDelay);
         return this.retryOptions.jitter
             ? base * (0.75 + Math.random() * 0.5)
             : base;
     }
-    /**
-     * Creates a promise that resolves after the specified delay.
-     * @param ms - Delay in milliseconds
-     * @returns Promise that resolves after the delay
-     */
     sleep(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
-    /**
-     * Applies all registered request interceptors to modify the request configuration.
-     * Interceptors are executed in sequence, with each one receiving the output of the previous.
-     * @param config - Original request configuration
-     * @returns Modified request configuration
-     */
     async applyRequestInterceptors(config) {
-        if (!this.requestInterceptors.length)
-            return config;
         let result = config;
-        for (const interceptor of this.requestInterceptors) {
-            try {
-                result = await interceptor(result);
-            }
-            catch (error) {
-                this.log("error", "Request interceptor failed", { error });
-                throw error;
-            }
-        }
+        for (const interceptor of this.requestInterceptors)
+            result = await interceptor(result);
         return result;
     }
-    /**
-     * Applies all registered response interceptors to modify the response data.
-     * Interceptors are executed in sequence, with each one receiving the output of the previous.
-     * @param response - Original response data
-     * @returns Modified response data
-     */
     async applyResponseInterceptors(response) {
         let result = response;
-        for (const interceptor of this.responseInterceptors) {
-            try {
-                result = await interceptor(result);
-            }
-            catch (error) {
-                this.log("error", "Response interceptor failed", { error });
-                throw error;
-            }
-        }
+        for (const interceptor of this.responseInterceptors)
+            result = await interceptor(result);
         return result;
     }
-    /**
-     * Resolves a redirect location relative to the base URL.
-     * Handles both absolute and relative redirect URLs.
-     * @param location - The redirect location from the response
-     * @param baseUrl - The original request URL
-     * @returns The resolved absolute URL
-     */
     resolveRedirect(location, baseUrl) {
         try {
             return new URL(location, baseUrl).toString();
@@ -243,12 +223,6 @@ class HttpClientImproved {
             return location;
         }
     }
-    /**
-     * Parses the Retry-After header to determine when to retry a request.
-     * Supports both seconds and HTTP date formats.
-     * @param retryAfterHeader - The Retry-After header value
-     * @returns Delay in milliseconds, or undefined if not parseable
-     */
     parseRetryAfterMs(retryAfterHeader) {
         if (!retryAfterHeader)
             return undefined;
@@ -263,159 +237,16 @@ class HttpClientImproved {
             return Math.max(0, asDate - Date.now());
         return undefined;
     }
-    /**
-     * Reads response body with size limit enforcement.
-     * Collects chunks until the response is complete or the limit is exceeded.
-     * @param body - Async iterable of response chunks
-     * @returns Complete response body as a Buffer
-     */
-    async readBodyWithLimit(body, maxBytes = this.options.maxResponseBytes) {
-        if (!body)
-            return Buffer.alloc(0);
-        // ⚡ максимально быстрый парсинг через arrayBuffer
-        if (body?.arrayBuffer) {
-            const arrayBuffer = await body.arrayBuffer();
-            return Buffer.from(arrayBuffer);
+    async readBodyWithLimit(body) {
+        const buf = Buffer.from(await body.arrayBuffer());
+        const limit = this.options.maxResponseBytes;
+        if (typeof limit === "number" && limit > 0 && buf.length > limit) {
+            throw new Types_1.HttpClientError(`Response too large (${buf.length} bytes), limit is ${limit}`, 0);
         }
-        if (body[Symbol.asyncIterator]) {
-            const chunks = [];
-            let total = 0;
-            for await (const chunk of body) {
-                chunks.push(Buffer.from(chunk));
-                total += chunk.length;
-                if (total > maxBytes)
-                    break;
-            }
-            return Buffer.concat(chunks);
-        }
-        if (Buffer.isBuffer(body))
-            return body.subarray(0, maxBytes);
-        if (typeof body === "string")
-            return Buffer.from(body);
-        throw new TypeError(`Unsupported body type: ${typeof body}`);
-    }
-    /**
-     * Removes old metrics entries to prevent memory leaks.
-     * Keeps only metrics from the last 24 hours.
-     */
-    trimMetrics() {
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        for (const [key, metrics] of this.requestMetrics) {
-            if (metrics.endTime && metrics.endTime < cutoff) {
-                this.requestMetrics.delete(key);
-            }
-        }
-        for (const key of this.inflight.keys()) {
-            if (this.inflight.size > 1000) {
-                this.inflight.delete(key);
-            }
-        }
-    }
-    /**
-     * Sends an HTTP request with retry logic and rate limiting.
-     * Handles timeouts, redirects, and various retry scenarios.
-     * @param method - HTTP method (GET, POST, etc.)
-     * @param url - Target URL
-     * @param headers - HTTP headers
-     * @param body - Request body (optional)
-     * @param metrics - Optional metrics object to track request details
-     * @param redirects - Number of redirects followed so far
-     * @returns Promise resolving to the response data
-     */
-    async sendOnce(method, url, headers, body, metrics, redirects = 0) {
-        let lastError;
-        try {
-            if (this.limiter && this.options.enableRateLimit) {
-                await this.limiter.wait();
-            }
-            const finalConfig = await this.applyRequestInterceptors({
-                url,
-                method,
-                headers,
-                body,
-            });
-            const controller = new AbortController();
-            const timeout = this.options.timeout;
-            const timer = setTimeout(() => controller.abort(), timeout);
-            try {
-                const res = await (0, undici_1.request)(finalConfig.url, {
-                    method: finalConfig.method,
-                    headers: finalConfig.headers,
-                    body: finalConfig.body,
-                    dispatcher: this.agent,
-                    signal: controller.signal,
-                });
-                if (method === "HEAD") {
-                    clearTimeout(timer);
-                    return {
-                        status: res.statusCode,
-                        headers: res.headers,
-                        body: Buffer.alloc(0),
-                        url: finalConfig.url,
-                    };
-                }
-                clearTimeout(timer);
-                const buf = await this.readBodyWithLimit(res.body);
-                let response = await this.applyResponseInterceptors({
-                    status: res.statusCode,
-                    headers: res.headers,
-                    body: buf,
-                    url: finalConfig.url,
-                });
-                if (!this.options.validateStatus(response.status)) {
-                    throw new Types_1.HttpClientError(`Request failed with status ${response.status}`, response.status, undefined, finalConfig.url, finalConfig.method);
-                }
-                if (this.options.followRedirects &&
-                    [301, 302, 303, 307, 308].includes(response.status) &&
-                    redirects < (this.options.maxRedirects ?? 5)) {
-                    const location = response.headers.location;
-                    if (location) {
-                        const nextUrl = this.resolveRedirect(location, finalConfig.url);
-                        const redirectMethod = response.status === 303 ? "GET" : method;
-                        const nextHeaders = { ...headers };
-                        let nextBody = body;
-                        if (redirectMethod === "GET") {
-                            nextBody = undefined;
-                            delete nextHeaders["content-type"];
-                            delete nextHeaders["Content-Type"];
-                            delete nextHeaders["content-length"];
-                            delete nextHeaders["Content-Length"];
-                        }
-                        this.log("debug", `Redirecting to ${nextUrl}`, {
-                            originalUrl: finalConfig.url,
-                            status: response.status,
-                        });
-                        return this.sendOnce(redirectMethod, nextUrl, nextHeaders, nextBody, metrics, redirects + 1);
-                    }
-                }
-                return response;
-            }
-            catch (timeoutErr) {
-                clearTimeout(timer);
-                if (timeoutErr?.name === "AbortError")
-                    throw new Types_1.TimeoutError(url, timeout);
-                throw timeoutErr;
-            }
-            finally {
-                clearTimeout(timer);
-            }
-        }
-        catch (err) {
-            lastError = err;
-            this.log("error", `Request error ${method} ${url}: ${err?.message ?? String(err)}`, {
-                error: err,
-            });
-            metrics && (metrics.retries += 1);
-        }
-        if (lastError instanceof Types_1.HttpClientError)
-            throw lastError;
-        throw new Types_1.HttpClientError(`Request failed after 1 attempt`, undefined, lastError instanceof Error ? lastError : undefined, url, method);
+        return buf;
     }
     async sendWithRetry(method, url, headers, body, metrics, redirects = 0) {
         let lastError;
-        if (this.retryOptions.maxRetries === 0) {
-            return this.sendOnce(method, url, headers, body, metrics, redirects);
-        }
         for (let attempt = 0; attempt <= this.retryOptions.maxRetries; attempt++) {
             try {
                 if (this.limiter && this.options.enableRateLimit) {
@@ -428,7 +259,7 @@ class HttpClientImproved {
                     body,
                 });
                 const controller = new AbortController();
-                const timeout = this.options.timeout;
+                const timeout = this.options.timeout ?? 15000;
                 const timer = setTimeout(() => controller.abort(), timeout);
                 try {
                     const res = await (0, undici_1.request)(finalConfig.url, {
@@ -438,15 +269,6 @@ class HttpClientImproved {
                         dispatcher: this.agent,
                         signal: controller.signal,
                     });
-                    if (method === "HEAD") {
-                        clearTimeout(timer);
-                        return {
-                            status: res.statusCode,
-                            headers: res.headers,
-                            body: Buffer.alloc(0),
-                            url: finalConfig.url,
-                        };
-                    }
                     clearTimeout(timer);
                     const buf = await this.readBodyWithLimit(res.body);
                     let response = await this.applyResponseInterceptors({
@@ -455,9 +277,7 @@ class HttpClientImproved {
                         body: buf,
                         url: finalConfig.url,
                     });
-                    if (!this.options.validateStatus(response.status)) {
-                        throw new Types_1.HttpClientError(`Request failed with status ${response.status}`, response.status, undefined, finalConfig.url, finalConfig.method);
-                    }
+                    // Redirects
                     if (this.options.followRedirects &&
                         [301, 302, 303, 307, 308].includes(response.status) &&
                         redirects < (this.options.maxRedirects ?? 5)) {
@@ -467,6 +287,7 @@ class HttpClientImproved {
                             const redirectMethod = response.status === 303 ? "GET" : method;
                             const nextHeaders = { ...headers };
                             let nextBody = body;
+                            // If switching to GET, drop body-related headers.
                             if (redirectMethod === "GET") {
                                 nextBody = undefined;
                                 delete nextHeaders["content-type"];
@@ -481,6 +302,7 @@ class HttpClientImproved {
                             return this.sendWithRetry(redirectMethod, nextUrl, nextHeaders, nextBody, metrics, redirects + 1);
                         }
                     }
+                    // Retry by status
                     if (this.retryOptions.retryStatusCodes.includes(response.status)) {
                         metrics && (metrics.retries += 1);
                         if (response.status === 429) {
@@ -532,11 +354,6 @@ class HttpClientImproved {
             throw lastError;
         throw new Types_1.HttpClientError(`Request failed after ${this.retryOptions.maxRetries + 1} attempts`, undefined, lastError instanceof Error ? lastError : undefined, url, method);
     }
-    /**
-     * Parses the Content-Type header to extract MIME type and character encoding.
-     * @param contentType - Content-Type header value
-     * @returns Object containing type and charset information
-     */
     parseContentType(contentType) {
         if (!contentType)
             return { type: "text/plain", charset: "utf-8" };
@@ -560,180 +377,69 @@ class HttpClientImproved {
             "base64",
             "hex",
         ];
-        return {
-            type,
-            charset: allowed.includes(normalized)
-                ? normalized
-                : "utf-8",
-        };
+        const charset = (allowed.includes(normalized)
+            ? normalized
+            : "utf-8");
+        return { type, charset };
     }
-    /**
-     * Parses the HTTP response body based on content type and requested response type.
-     * Handles JSON, XML, text, and buffer responses with fallback parsing.
-     * @param res - HTTP response object
-     * @param responseType - Desired response type
-     * @returns Parsed response data
-     */
+    xmlParser = new fast_xml_parser_1.XMLParser({
+        ignoreAttributes: false,
+        allowBooleanAttributes: true,
+    });
     async parseResponse(res, responseType) {
-        const { type } = this.parseContentType(res.headers["content-type"]);
-        const finalType = responseType ?? (type.includes("application/json") ? "json" : "text");
         try {
+            const contentType = res.headers["content-type"] || "";
+            const text = await this.decompress(res.body, res.headers["content-encoding"]);
+            const finalType = responseType ?? "json";
             switch (finalType) {
-                case "json":
-                    return JSON.parse(res.body.toString("utf8"));
+                case "json": {
+                    if (contentType.includes("json")) {
+                        return JSON.parse(text);
+                    }
+                    if (text.trim().startsWith("<")) {
+                        return this.xmlParser.parse(text);
+                    }
+                    return { text };
+                }
                 case "xml": {
+                    const text = await this.decompress(res.body, res.headers["content-encoding"]);
+                    if (text.trim().startsWith("<")) {
+                        return text;
+                    }
                     try {
-                        const jsonData = JSON.parse(res.body.toString("utf8"));
-                        return new fast_xml_parser_1.XMLBuilder({ format: true }).build({ root: jsonData });
+                        const json = JSON.parse(text);
+                        return new fast_xml_parser_1.XMLBuilder({ format: true }).build({ root: json });
                     }
                     catch {
-                        return res.body.toString("utf8");
+                        return String(text);
                     }
                 }
                 case "text":
-                    return res.body.toString("utf8");
+                    return text;
                 case "buffer":
                     return res.body;
                 case "stream":
-                    throw new Error("Stream mode requires raw response. Use stream() method.");
+                    return res.body;
                 default:
-                    return res.body.toString("utf8");
+                    return text;
             }
         }
-        catch (err) {
-            throw new Types_1.HttpClientError(`Parsing failed: ${err?.message ?? String(err)}`, res.status);
+        catch (error) {
+            this.log("error", "Failed to parse response", {
+                error,
+                status: res.status,
+                contentType: res.headers["content-type"],
+            });
+            throw new Types_1.HttpClientError(`Response parsing failed: ${error instanceof Error ? error.message : String(error)}`, res.status);
         }
-    }
-    /**
-     * Makes an HTTP request without using the cache.
-     * Used for methods that shouldn't be cached or when caching is disabled.
-     * @param method - HTTP method
-     * @param req - Request configuration
-     * @param responseType - Expected response type
-     * @returns Promise resolving to the response data
-     */
-    async requestInternalWithoutCache(method, req, responseType) {
-        const url = req.getURL();
-        const rawBody = req.getBodyData();
-        const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
-        const isBodyAllowed = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-        let body;
-        const contentType = headers["content-type"] || headers["Content-Type"] || "";
-        if (isBodyAllowed && rawBody !== undefined && rawBody !== null) {
-            if (Buffer.isBuffer(rawBody)) {
-                body = rawBody;
-            }
-            else if (typeof rawBody === "string") {
-                body = rawBody;
-            }
-            else if (contentType.includes("application/x-www-form-urlencoded")) {
-                body = new url_1.URLSearchParams(rawBody).toString();
-            }
-            else {
-                body = JSON.stringify(rawBody);
-                if (!contentType)
-                    headers["Content-Type"] = "application/json; charset=utf-8";
-            }
-        }
-        const metrics = {
-            startTime: Date.now(),
-            endTime: 0,
-            duration: 0,
-            bytesReceived: 0,
-            bytesSent: 0,
-            retries: 0,
-            cached: false,
-            url,
-            method,
-        };
-        const result = await (this.queue && this.options.enableQueue
-            ? this.queue.enqueue(async () => {
-                const res = await this.sendWithRetry(method, url, headers, body, metrics);
-                metrics.statusCode = res.status;
-                metrics.bytesReceived = res.body.length;
-                metrics.bytesSent =
-                    body instanceof Buffer
-                        ? body.length
-                        : Buffer.byteLength(body || "");
-                if (method === "HEAD") {
-                    return { status: res.status, headers: res.headers };
-                }
-                const parsed = await this.parseResponse(res, responseType);
-                return parsed;
-            })
-            : (async () => {
-                const res = await this.sendWithRetry(method, url, headers, body, metrics);
-                metrics.statusCode = res.status;
-                metrics.bytesReceived = res.body.length;
-                metrics.bytesSent =
-                    body instanceof Buffer
-                        ? body.length
-                        : Buffer.byteLength(body || "");
-                if (method === "HEAD") {
-                    return { status: res.status, headers: res.headers };
-                }
-                const parsed = await this.parseResponse(res, responseType);
-                return parsed;
-            })());
-        metrics.endTime = Date.now();
-        metrics.duration = metrics.endTime - metrics.startTime;
-        this.requestMetrics.set(url, metrics);
-        this.trimMetrics();
-        return result;
-    }
-    /**
-     * Makes an HTTP request with caching support.
-     * Handles cache lookups, request deduplication, and automatic cache storage.
-     * @param method - HTTP method
-     * @param req - Request configuration
-     * @param useCache - Whether to use caching (default: true)
-     * @param responseType - Expected response type
-     * @returns Promise resolving to the response data
-     */
-    async fastRequest(method, req, responseType) {
-        const url = req.getURL();
-        const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
-        const body = req.getBodyData();
-        let finalBody;
-        if (body == null) {
-            finalBody = undefined;
-        }
-        else if (typeof body === "string" || Buffer.isBuffer(body)) {
-            finalBody = body;
-        }
-        else {
-            finalBody = JSON.stringify(body);
-        }
-        const res = await (0, undici_1.request)(url, {
-            method,
-            headers,
-            body: finalBody,
-            dispatcher: this.agent,
-        });
-        if (responseType === "json") {
-            return res.body.json();
-        }
-        if (responseType === "text") {
-            const text = await res.body.text();
-            return text;
-        }
-        return Buffer.from(await res.body.arrayBuffer());
     }
     async requestInternal(method, req, useCache = true, responseType) {
-        if (!this.cache &&
-            !this.options.enableQueue &&
-            !this.options.enableRateLimit &&
-            this.retryOptions.maxRetries === 0 &&
-            this.requestInterceptors.length === 0 &&
-            this.responseInterceptors.length === 0) {
-            return this.fastRequest(method, req, responseType);
-        }
-        if (this.options.cacheTTL === 0 || this.options.enableCache === false) {
-            return this.requestInternalWithoutCache(method, req, responseType);
-        }
         const url = req.getURL();
         const rawBody = req.getBodyData();
-        const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
+        const headers = {
+            ...this.defaultHeaders,
+            ...req.getHeaders(),
+        };
         const isBodyAllowed = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
         let body;
         const contentType = headers["content-type"] || headers["Content-Type"] || "";
@@ -745,31 +451,26 @@ class HttpClientImproved {
                 body = rawBody;
             }
             else if (contentType.includes("application/x-www-form-urlencoded")) {
-                body = new url_1.URLSearchParams(rawBody).toString();
+                body = new URLSearchParams(rawBody).toString();
             }
             else {
                 body = JSON.stringify(rawBody);
-                if (!contentType)
+                if (!contentType) {
                     headers["Content-Type"] = "application/json; charset=utf-8";
+                }
             }
         }
-        let cacheKey;
-        if (this.cache && useCache) {
-            const bodyHash = this.hashBody(body);
-            cacheKey = (0, crypto_1.createHash)("sha1")
-                .update(method + url + bodyHash + responseType)
-                .digest("hex");
-        }
-        if (cacheKey && this.options.cacheMethods.includes(method) && useCache && this.cache) {
-            const cached = await this.cache.get(cacheKey);
-            if (cached != null) {
+        const key = `${method}:${url}:${body ?? ""}`;
+        if (method === "GET" && useCache && this.cache) {
+            const cached = await this.cache.get(key);
+            if (cached) {
                 this.log("debug", `Cache hit for ${url}`);
                 return cached;
             }
         }
-        if (cacheKey && this.inflight.has(cacheKey)) {
+        if (this.inflight.has(key)) {
             this.log("debug", `Deduplicating request for ${url}`);
-            return this.inflight.get(cacheKey);
+            return this.inflight.get(key);
         }
         const promise = (async () => {
             const metrics = {
@@ -784,80 +485,53 @@ class HttpClientImproved {
                 method,
             };
             try {
-                this.log("debug", `Starting request: ${method} ${url}`);
-                const result = await (this.queue && this.options.enableQueue
-                    ? this.queue.enqueue(async () => {
-                        const res = await this.sendWithRetry(method, url, headers, body, metrics);
-                        metrics.statusCode = res.status;
-                        metrics.bytesReceived = res.body.length;
-                        metrics.bytesSent =
-                            body instanceof Buffer
-                                ? body.length
-                                : Buffer.byteLength(body || "");
-                        if (method === "HEAD") {
-                            return { status: res.status, headers: res.headers };
-                        }
-                        const parsed = await this.parseResponse(res, responseType);
-                        if (cacheKey &&
-                            this.options.cacheMethods.includes(method) &&
-                            useCache &&
-                            this.cache) {
-                            this.cache.set(cacheKey, parsed);
-                            metrics.cached = true;
-                        }
-                        return parsed;
-                    })
-                    : (async () => {
-                        const res = await this.sendWithRetry(method, url, headers, body, metrics);
-                        metrics.statusCode = res.status;
-                        metrics.bytesReceived = res.body.length;
-                        metrics.bytesSent =
-                            body instanceof Buffer
-                                ? body.length
-                                : Buffer.byteLength(body || "");
-                        if (method === "HEAD") {
-                            return { status: res.status, headers: res.headers };
-                        }
-                        const parsed = await this.parseResponse(res, responseType);
-                        if (cacheKey &&
-                            this.options.cacheMethods.includes(method) &&
-                            useCache &&
-                            this.cache) {
-                            await this.cache.set(cacheKey, parsed);
-                            metrics.cached = true;
-                        }
-                        return parsed;
-                    })());
+                let result;
+                const res = await this.sendWithRetry(method, url, headers, body, metrics);
+                metrics.statusCode = res.status;
+                metrics.bytesReceived = res.body.length;
+                metrics.bytesSent =
+                    body instanceof Buffer ? body.length : Buffer.byteLength(body || "");
+                if (method === "HEAD") {
+                    metrics.endTime = Date.now();
+                    metrics.duration = metrics.endTime - metrics.startTime;
+                    this.requestMetrics.set(key, metrics);
+                    this.log("info", `${method} ${url} completed in ${metrics.duration}ms`, metrics);
+                    return {
+                        status: res.status,
+                        headers: res.headers,
+                    };
+                }
+                const parsed = await this.parseResponse(res, responseType);
+                if (method === "GET" && useCache && this.cache) {
+                    this.cache.set(key, parsed);
+                    metrics.cached = true;
+                }
+                result = parsed;
                 metrics.endTime = Date.now();
                 metrics.duration = metrics.endTime - metrics.startTime;
-                this.requestMetrics.set(cacheKey || url, metrics);
-                this.trimMetrics();
+                this.requestMetrics.set(key, metrics);
                 this.log("info", `${method} ${url} completed in ${metrics.duration}ms`, metrics);
                 return result;
             }
             catch (error) {
                 metrics.endTime = Date.now();
                 metrics.duration = metrics.endTime - metrics.startTime;
-                this.requestMetrics.set(cacheKey || url, metrics);
-                this.trimMetrics();
+                this.requestMetrics.set(key, metrics);
                 throw error;
             }
             finally {
-                if (cacheKey)
-                    this.inflight.delete(cacheKey);
+                this.inflight.delete(key);
             }
         })();
-        if (cacheKey)
-            this.inflight.set(cacheKey, promise);
+        this.inflight.set(key, promise);
         return promise;
     }
     /**
-     * Makes an HTTP GET request.
-     * Supports both RequestInterface objects and direct URL strings.
-     * GET requests are cached by default unless caching is disabled.
-     * @param req - Request configuration or URL string
-     * @param responseType - Expected response type (default: "json")
-     * @returns Promise resolving to the response data
+     * Performs an HTTP GET request.
+     * @param req The request object containing URL and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
      */
     get(req, responseType = "json") {
         if (typeof req === "string") {
@@ -873,13 +547,11 @@ class HttpClientImproved {
         }
     }
     /**
-     * Makes an HTTP POST request.
-     * Supports both RequestInterface objects and direct URL strings with body data.
-     * POST requests are not cached by default due to their side effects.
-     * @param req - Request configuration or URL string
-     * @param body - Request body data (optional)
-     * @param responseType - Expected response type (default: "json")
-     * @returns Promise resolving to the response data
+     * Performs an HTTP POST request.
+     * @param req The request object containing URL, body, and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
      */
     post(req, body, responseType = "json") {
         if (typeof req === "string") {
@@ -895,13 +567,11 @@ class HttpClientImproved {
         }
     }
     /**
-     * Makes an HTTP PUT request.
-     * Supports both RequestInterface objects and direct URL strings with body data.
-     * PUT requests are not cached by default due to their side effects.
-     * @param req - Request configuration or URL string
-     * @param body - Request body data (optional)
-     * @param responseType - Expected response type (default: "json")
-     * @returns Promise resolving to the response data
+     * Performs an HTTP PUT request.
+     * @param req The request object containing URL, body, and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
      */
     put(req, body, responseType = "json") {
         if (typeof req === "string") {
@@ -913,6 +583,43 @@ class HttpClientImproved {
             return this.requestInternal("PUT", simpleReq, false, responseType);
         }
         return this.requestInternal("PUT", req, false, responseType);
+    }
+    /**
+     * Performs an HTTP DELETE request.
+     * @param req The request object containing URL and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
+     */
+    delete(req, responseType = "json") {
+        if (typeof req === "string") {
+            const client = new HttpClientImproved();
+            const simpleReq = {
+                getURL: () => req,
+                getBodyData: () => undefined,
+                getHeaders: () => ({}),
+            };
+            return client.delete(simpleReq, responseType);
+        }
+        return this.requestInternal("DELETE", req, false, responseType);
+    }
+    /**
+     * Performs an HTTP PATCH request.
+     * @param req The request object containing URL, body, and headers
+     * @param responseType Optional response parsing type
+     * @returns A promise that resolves to the parsed response
+     * @template T The expected response type
+     */
+    patch(req, body, responseType = "json") {
+        if (typeof req === "string") {
+            const simpleReq = {
+                getURL: () => req,
+                getBodyData: () => body,
+                getHeaders: () => ({ "Content-Type": "application/json" }),
+            };
+            return this.requestInternal("PATCH", simpleReq, false, responseType);
+        }
+        return this.requestInternal("PATCH", req, false, responseType);
     }
     /**
      * @ru Получает потоковый ответ (для SSE, больших файлов).
@@ -930,7 +637,10 @@ class HttpClientImproved {
         return (this.queue && this.options.enableQueue
             ? this.queue.enqueue(async function () {
                 const url = req.getURL();
-                const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
+                const headers = {
+                    ...this.defaultHeaders,
+                    ...req.getHeaders(),
+                };
                 const response = await (0, undici_1.request)(url, {
                     method: "GET",
                     headers,
@@ -945,7 +655,7 @@ class HttpClientImproved {
             }.bind(this))
             : async function () {
                 const url = req.getURL();
-                const headers = Object.assign({}, this.baseHeaders, req.getHeaders());
+                const headers = Object.assign({}, this.defaultHeaders, req.getHeaders());
                 const response = await (0, undici_1.request)(url, {
                     method: "GET",
                     headers,
@@ -960,49 +670,9 @@ class HttpClientImproved {
             }.bind(this)());
     }
     /**
-     * Makes an HTTP DELETE request.
-     * Supports both RequestInterface objects and direct URL strings.
-     * DELETE requests are not cached by default due to their side effects.
-     * @param req - Request configuration or URL string
-     * @param responseType - Expected response type (default: "json")
-     * @returns Promise resolving to the response data
-     */
-    delete(req, responseType = "json") {
-        if (typeof req === "string") {
-            const client = defaultClient ?? (defaultClient = new HttpClientImproved());
-            const simpleReq = {
-                getURL: () => req,
-                getBodyData: () => undefined,
-                getHeaders: () => ({}),
-            };
-            return client.delete(simpleReq, responseType);
-        }
-        return this.requestInternal("DELETE", req, false, responseType);
-    }
-    /**
-     * Makes an HTTP PATCH request.
-     * PATCH requests are not cached by default due to their side effects.
-     * @param req - Request configuration
-     * @param responseType - Expected response type (default: "json")
-     * @returns Promise resolving to the response data
-     */
-    patch(req, body, responseType = "json") {
-        if (typeof req === "string") {
-            const simpleReq = {
-                getURL: () => req,
-                getBodyData: () => body,
-                getHeaders: () => ({ "Content-Type": "application/json" }),
-            };
-            return this.requestInternal("PATCH", simpleReq, false, responseType);
-        }
-        return this.requestInternal("PATCH", req, false, responseType);
-    }
-    /**
-     * Makes an HTTP HEAD request.
-     * Returns only the status code and headers without the response body.
-     * HEAD requests are not cached by default.
-     * @param req - Request configuration or URL string
-     * @returns Promise resolving to status and headers
+     * Performs an HTTP HEAD request.
+     * @param req The request object containing URL and headers
+     * @returns A promise that resolves when the request completes
      */
     async head(req) {
         if (typeof req === "string") {
@@ -1016,8 +686,7 @@ class HttpClientImproved {
         return this.requestInternal("HEAD", req, false);
     }
     /**
-     * Clears the internal cache of the HTTP client.
-     * Removes all cached responses and resets the cache state.
+     * Clears the request cache.
      */
     async clearCache() {
         if (this.cache) {
@@ -1055,12 +724,11 @@ class HttpClientImproved {
      * @returns RequestBuilder instance for chaining
      */
     request(url) {
-        return new RequestBuilder(url);
+        return new RequestBuilder_1.RequestBuilder(url);
     }
     /**
      * Returns current statistics about the HTTP client's state.
-     * Useful for monitoring and debugging performance.
-     * @returns Object containing various client statistics
+     * @returns An object containing cache size, request counts, and rate limit information
      */
     getStats() {
         return {
@@ -1075,173 +743,8 @@ class HttpClientImproved {
             currentRateLimit: this.limiter && this.options.enableRateLimit
                 ? (this.limiter.currentCount ?? 0)
                 : 0,
-            metricsSize: this.requestMetrics.size,
         };
     }
 }
 exports.default = HttpClientImproved;
-/**
- * Fluent request builder for making HTTP requests with a chainable API.
- * Provides a convenient way to build and send HTTP requests with various options.
- *
- * @example
- * ```ts
- * const client = new HttpClientImproved();
- * const response = await client.request('https://api.example.com/data')
- *   .headers({ 'Authorization': 'Bearer token' })
- *   .query({ limit: 10, offset: 0 })
- *   .json()
- *   .send();
- * ```
- */
-class RequestBuilder {
-    _url;
-    _method = "GET";
-    _headers = {};
-    _body;
-    _responseType = "json";
-    /**
-     * Creates a new request builder for the specified URL.
-     * @param url - The target URL for the request
-     */
-    constructor(url) {
-        this._url = url;
-    }
-    /**
-     * Sets HTTP headers for the request.
-     * @param headers - Object containing header key-value pairs
-     * @returns The builder instance for chaining
-     */
-    headers(headers) {
-        this._headers = headers;
-        return this;
-    }
-    /**
-     * Sets the request body data.
-     * @param bodyData - The body data to send with the request
-     * @returns The builder instance for chaining
-     */
-    body(bodyData) {
-        this._body = bodyData;
-        return this;
-    }
-    /**
-     * Sets the response type to JSON.
-     * @returns The builder instance for chaining
-     */
-    json() {
-        this._responseType = "json";
-        return this;
-    }
-    /**
-     * Sets the response type to plain text.
-     * @returns The builder instance for chaining
-     */
-    text() {
-        this._responseType = "text";
-        return this;
-    }
-    /**
-     * Sets the response type to XML.
-     * @returns The builder instance for chaining
-     */
-    xml() {
-        this._responseType = "xml";
-        return this;
-    }
-    /**
-     * Sets the HTTP method to POST.
-     * @returns The builder instance for chaining
-     */
-    post() {
-        this._method = "POST";
-        return this;
-    }
-    /**
-     * @ru Устанавливает потоковый режим ответа.
-     * @en Sets streaming response mode.
-     */
-    stream() {
-        this._responseType = "stream";
-        return this;
-    }
-    /**
-     * Sets the HTTP method to PUT.
-     * @returns The builder instance for chaining
-     */
-    put() {
-        this._method = "PUT";
-        return this;
-    }
-    /**
-     * Sets the HTTP method to PATCH.
-     * @returns The builder instance for chaining
-     */
-    patch() {
-        this._method = "PATCH";
-        return this;
-    }
-    /**
-     * Sets the HTTP method to DELETE.
-     * @returns The builder instance for chaining
-     */
-    delete() {
-        this._method = "DELETE";
-        return this;
-    }
-    /**
-     * Adds query parameters to the URL.
-     * @param params - Object containing query parameter key-value pairs
-     * @returns The builder instance for chaining
-     */
-    query(params) {
-        const urlObj = new URL(this._url);
-        Object.entries(params).forEach(([k, v]) => urlObj.searchParams.set(k, String(v)));
-        this._url = urlObj.toString();
-        return this;
-    }
-    /**
-     * Sets a JSON body for the request.
-     * Automatically sets the Content-Type header to application/json.
-     * @param body - The JSON body data
-     * @returns The builder instance for chaining
-     */
-    jsonBody(body) {
-        this._body = body;
-        this._headers["Content-Type"] = "application/json; charset=utf-8";
-        return this;
-    }
-    /**
-     * Sends the HTTP request and returns the response.
-     * @returns Promise resolving to the response data
-     */
-    async send() {
-        const client = defaultClient ?? (defaultClient = new HttpClientImproved());
-        const req = {
-            getURL: () => this._url,
-            getBodyData: () => this._body,
-            getHeaders: () => this._headers,
-        };
-        switch (this._method) {
-            case "GET":
-                if (this._responseType === "stream") {
-                    return client.stream(req);
-                }
-                return client.get(req, this._responseType);
-            case "POST":
-                return client.post(req, this._body, this._responseType);
-            case "PUT":
-                return client.put(req, this._body, this._responseType);
-            case "DELETE":
-                return client.delete(req, this._responseType);
-            case "PATCH":
-                return client.patch(req, this._body, this._responseType);
-            default:
-                if (this._responseType === "stream") {
-                    return client.stream(req);
-                }
-                return client.get(req, this._responseType);
-        }
-    }
-}
 //# sourceMappingURL=HttpClientImproved.js.map

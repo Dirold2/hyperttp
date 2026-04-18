@@ -17,9 +17,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RateLimiter = exports.CacheManager = exports.QueueManager = exports.HttpClientImproved = void 0;
+exports.RateLimiter = exports.CacheManager = exports.QueueManager = exports.RequestBuilder = exports.HttpClientImproved = void 0;
 var HttpClientImproved_js_1 = require("./HttpClientImproved.js");
 Object.defineProperty(exports, "HttpClientImproved", { enumerable: true, get: function () { return __importDefault(HttpClientImproved_js_1).default; } });
+var RequestBuilder_js_1 = require("./RequestBuilder.js");
+Object.defineProperty(exports, "RequestBuilder", { enumerable: true, get: function () { return RequestBuilder_js_1.RequestBuilder; } });
 var QueueManager_js_1 = require("./QueueManager.js");
 Object.defineProperty(exports, "QueueManager", { enumerable: true, get: function () { return QueueManager_js_1.QueueManager; } });
 var CacheManager_js_1 = require("./CacheManager.js");
