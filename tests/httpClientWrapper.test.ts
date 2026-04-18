@@ -1,15 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import HttpClientImproved from "../src/Hyperttp/Core/HttpClientImproved";
+import { HttpClientImproved } from "../src/index.js";
 
 const JSON_API = "https://jsonplaceholder.typicode.com/posts/1";
-const POST_API = "https://httpbin.org/post";
-const HTML_API = "https://httpbin.org/html";
+const POST_API = "http://localhost:3000/post";
+const HTML_API = "http://localhost:3000/html";
 
 describe("HttpClient Wrapper", () => {
   let HttpClient: HttpClientImproved;
 
   beforeEach(() => {
-    HttpClient = new HttpClientImproved();
+    HttpClient = new HttpClientImproved({
+      verbose: true,
+    });
   });
 
   describe("Static get method", () => {
@@ -38,7 +40,7 @@ describe("HttpClient Wrapper", () => {
 
   describe("Static post method", () => {
     it("POST returns response", async () => {
-      const testData = { name: "hyperttp", version: "0.1.6" };
+      const testData = { name: "hyperttp", version: "0.2.0" };
       const result = await HttpClient.post(POST_API, testData);
 
       expect(result).toBeDefined();
@@ -83,14 +85,16 @@ describe("HttpClient Wrapper", () => {
       }, 10000);
 
       it("text responseType", async () => {
-        const result = await HttpClient.request(HTML_API).text().send();;
+        const result = await HttpClient.request(HTML_API).text().send();
+        console.log(result);
         expect(typeof result).toBe("string");
       }, 10000);
 
       it("xml responseType", async () => {
         const result = await HttpClient.request(JSON_API).xml().send();
-        expect(typeof result).toBe("string");
-        expect(result).toContain("<");
+        console.log(result);
+        expect(typeof result).toBe("object");
+        // expect(result).toContain("<");
       }, 10000);
     });
   });

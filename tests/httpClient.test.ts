@@ -30,14 +30,21 @@ function createMockBody(data: any) {
     arrayBuffer: async () => {
       // Return a fresh ArrayBuffer containing only the JSON data
       const uint8 = new Uint8Array(buffer);
-      return uint8.buffer.slice(uint8.byteOffset, uint8.byteOffset + uint8.byteLength);
+      return uint8.buffer.slice(
+        uint8.byteOffset,
+        uint8.byteOffset + uint8.byteLength,
+      );
     },
     text: async () => jsonStr,
     json: async () => data,
   };
 }
 
-function createMockResponse(data: any, status = 200, headers = { "content-type": "application/json" }) {
+function createMockResponse(
+  data: any,
+  status = 200,
+  headers = { "content-type": "application/json" },
+) {
   return {
     statusCode: status,
     statusText: status === 200 ? "OK" : "Error",
@@ -135,9 +142,7 @@ describe("HttpClientImproved", () => {
     await client.get(req, "json");
     client.clearCache();
 
-    const cache = await (client as any).cache.get(
-      "GET:https://httpbin.org:443/",
-    );
+    const cache = await (client as any).cache.get("GET:http://localhost:3000/");
     expect(cache).toBeUndefined();
   });
 });

@@ -14,6 +14,7 @@
  */
 
 export { default as HttpClientImproved } from "./HttpClientImproved.js";
+export { RequestBuilder } from "./RequestBuilder.js";
 export { QueueManager } from "./QueueManager.js";
 export { CacheManager } from "./CacheManager.js";
 export { RateLimiter } from "./RateLimiter.js";

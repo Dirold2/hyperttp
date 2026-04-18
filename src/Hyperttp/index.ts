@@ -1,5 +1,6 @@
 export {
   HttpClientImproved,
+  RequestBuilder,
   QueueManager,
   CacheManager,
   RateLimiter,
