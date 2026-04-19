@@ -1,48 +1,29 @@
 # Hyperttp
 
-Advanced HTTP client for Node.js with caching, rate limiting, request queuing, automatic retries, cookie management, and response decompression.
+Advanced HTTP client for Node.js with caching, rate limiting, request queuing, automatic retries, cookie management, and automatic JSON/XML parsing.
 
 ## Features
 
-* Automatic request deduplication
-* LRU caching with TTL
-* Configurable rate limiting
-* Concurrent request management
-* Exponential backoff with jitter
-* Cookie jar support
-* Automatic response parsing (JSON/XML)
-* Compression support (gzip, deflate, brotli)
+- Automatic request deduplication
+- LRU caching with TTL
+- Configurable rate limiting
+- Concurrent request management
+- Exponential backoff with jitter for retries
+- Cookie jar support
+- Automatic response parsing (JSON/XML/text/buffer)
+- Automatic handling of redirects
+- Fluent request builder API
 
----
+## Installation
 
-## Buttons to Switch Language
+```bash
+npm install hyperttp
+```
 
-[English](#english-version) | [Русский](#russian-version)
+## Basic Usage
 
----
-
-## Russian Version
-
-### Описание
-
-Расширенный HTTP клиент для Node.js с кэшированием, ограничением запросов, очередями запросов, автоматическими повторными попытками, управлением cookie и декомпрессией ответов.
-
-### Возможности
-
-* Автоматическое предотвращение дублирования запросов
-* LRU кэширование с TTL
-* Настраиваемое ограничение запросов
-* Управление конкурентными запросами
-* Экспоненциальная задержка с джиттером
-* Поддержка cookie jar
-* Автопарсинг JSON/XML
-* Поддержка сжатия (gzip, deflate, brotli)
-
-### Пример использования
-
-```ts
-import HttpClientImproved from './src/Hyperttp/Core/HttpClientImproved';
-import Request from './src/Hyperttp/Request';
+```typescript
+import HttpClientImproved from "hyperttp";
 
 const client = new HttpClientImproved({
   timeout: 10000,
@@ -50,43 +31,52 @@ const client = new HttpClientImproved({
   logger: (level, msg) => console.log(`[${level}] ${msg}`),
 });
 
-const req = new Request({ scheme: 'https', host: 'example.com', port: 443 });
-const data = await client.get(req);
+// Simple GET request
+const data = await client.get("https://api.example.com/data");
 console.log(data);
-```
 
----
-
-## English Version
-
-### Description
-
-Advanced HTTP client for Node.js with caching, rate limiting, request queuing, automatic retries, cookie management, and response decompression.
-
-### Features
-
-* Automatic request deduplication
-* LRU caching with TTL
-* Configurable rate limiting
-* Concurrent request management
-* Exponential backoff with jitter
-* Cookie jar support
-* Automatic response parsing (JSON/XML)
-* Compression support (gzip, deflate, brotli)
-
-### Usage Example
-
-```ts
-import HttpClientImproved from './src/Hyperttp/Core/HttpClientImproved';
-import Request from './src/Hyperttp/Request';
-
-const client = new HttpClientImproved({
-  timeout: 10000,
-  maxConcurrent: 10,
-  logger: (level, msg) => console.log(`[${level}] ${msg}`),
+// POST request with JSON body
+const postData = await client.post("https://api.example.com/items", {
+  name: "Item 1",
 });
+console.log(postData);
 
-const req = new Request({ scheme: 'https', host: 'example.com', port: 443 });
-const data = await client.get(req);
-console.log(data);
+// Using fluent RequestBuilder
+const builderData = await client
+  .request("https://api.example.com/search")
+  .query({ q: "hyperttp", limit: 10 })
+  .headers({ Authorization: "Bearer TOKEN" })
+  .json()
+  .send();
+
+console.log(builderData);
 ```
+
+## Fluent Builder API
+
+```typescript
+client
+  .request("https://api.example.com/data")
+  .get() // default
+  .headers({ "X-Test": "123" })
+  .query({ page: 1 })
+  .json() // or .text(), .xml()
+  .send()
+  .then(console.log);
+```
+
+## Advanced Features
+
+- Caching: Automatically caches GET/HEAD responses, configurable TTL and max size
+
+- Rate limiting: Prevents overwhelming servers
+
+- Retries: Automatic retries for 408, 429, 500, 502, 503, 504 with exponential backoff
+
+- Cookies: Persistent cookie jar per client
+
+- Metrics: Track request timings, bytes sent/received, retries, and cache hits
+
+## Documentation
+
+- [Русский](https://github.com/Dirold2/hyperttp/blob/main/lang/ru/README.md)
