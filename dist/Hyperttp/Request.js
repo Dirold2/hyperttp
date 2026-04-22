@@ -1,40 +1,7 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PreparedRequest = void 0;
-const querystring = __importStar(require("querystring"));
+const querystring_1 = require("querystring");
 /**
  * Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data.
  * Provides methods to build and manipulate the request.
@@ -62,6 +29,7 @@ class Request {
     headers;
     query;
     bodyData;
+    signal;
     constructor(config) {
         this.scheme = config.scheme;
         this.host = config.host;
@@ -70,6 +38,7 @@ class Request {
         this.headers = config.headers ?? {};
         this.query = config.query ?? {};
         this.bodyData = config.bodyData ?? {};
+        this.signal = undefined;
     }
     normalizePath(path) {
         if (!path)
@@ -120,7 +89,7 @@ class Request {
         return this.bodyData;
     }
     getBodyDataString() {
-        return querystring.stringify(this.bodyData);
+        return (0, querystring_1.stringify)(this.bodyData);
     }
     setBodyData(bodyData) {
         this.bodyData = { ...bodyData };
@@ -143,6 +112,13 @@ class Request {
             base.searchParams.append(key, String(value));
         }
         return base.toString();
+    }
+    setSignal(signal) {
+        this.signal = signal;
+        return this;
+    }
+    getSignal() {
+        return this.signal;
     }
 }
 exports.default = Request;
@@ -227,6 +203,12 @@ class PreparedRequest {
     }
     getURL() {
         return this.request.getURL();
+    }
+    setSignal(signal) {
+        return this.request.setSignal(signal);
+    }
+    getSignal() {
+        return this.request.getSignal();
     }
 }
 exports.PreparedRequest = PreparedRequest;

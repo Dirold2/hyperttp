@@ -26,6 +26,7 @@ export default class Request implements RequestInterface {
     private headers;
     private query;
     private bodyData;
+    private signal?;
     constructor(config: RequestConfig);
     private normalizePath;
     setPath(path: string): this;
@@ -43,6 +44,8 @@ export default class Request implements RequestInterface {
     addBodyData(bodyData: RequestBodyData): this;
     getURI(): string;
     getURL(): string;
+    setSignal(signal: AbortSignal): this;
+    getSignal(): AbortSignal | undefined;
 }
 /**
  * PreparedRequest is a wrapper around Request that parses a base URL and provides the same RequestInterface methods.
@@ -74,5 +77,7 @@ export declare class PreparedRequest implements RequestInterface {
     addBodyData(bodyData: RequestBodyData): this;
     getURI(): string;
     getURL(): string;
+    setSignal(signal: AbortSignal): RequestInterface;
+    getSignal(): AbortSignal | undefined;
 }
 //# sourceMappingURL=Request.d.ts.map

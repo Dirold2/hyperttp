@@ -25,13 +25,16 @@ class RequestBuilder {
     _method = "GET";
     _headers = {};
     _body;
-    _responseType = "json";
+    _responseType = "auto"; // Помним про наш новый дефолт
+    _client;
+    _signal;
     /**
      * Creates a new request builder for the specified URL.
      * @param url - The target URL for the request
      */
-    constructor(url) {
+    constructor(url, client) {
         this._url = url;
+        this._client = client;
     }
     /**
      * Sets HTTP headers for the request.
@@ -84,12 +87,17 @@ class RequestBuilder {
         return this;
     }
     /**
-     * @ru Устанавливает потоковый режим ответа.
-     * @en Sets streaming response mode.
+     * @ru Выполняет запрос в режиме потока.
+     * @en Executes the request in streaming mode.
      */
-    stream() {
-        this._responseType = "stream";
-        return this;
+    async stream() {
+        const client = this.ensureClient();
+        return client.stream({
+            getURL: () => this._url,
+            getHeaders: () => this._headers,
+            getBodyData: () => this._body,
+            getSignal: () => this._signal,
+        });
     }
     /**
      * Sets the HTTP method to PUT.
@@ -138,36 +146,51 @@ class RequestBuilder {
         return this;
     }
     /**
+     * @ru Устанавливает AbortSignal для отмены запроса.
+     */
+    signal(signal) {
+        this._signal = signal;
+        return this;
+    }
+    /**
+     * @ru Устанавливает специфичный таймаут для этого запроса.
+     */
+    timeout(ms) {
+        this._signal = AbortSignal.timeout(ms);
+        return this;
+    }
+    /**
      * Sends the HTTP request and returns the response.
      * @returns Promise resolving to the response data
      */
     async send() {
-        const client = defaultClient ?? (defaultClient = new HttpClientImproved_1.default());
+        const client = this.ensureClient();
         const req = {
             getURL: () => this._url,
             getBodyData: () => this._body,
             getHeaders: () => this._headers,
+            getSignal: () => this._signal,
         };
+        if (this._responseType === "stream") {
+            return (await client.stream(req));
+        }
         switch (this._method) {
-            case "GET":
-                if (this._responseType === "stream") {
-                    return client.stream(req);
-                }
-                return client.get(req, this._responseType);
             case "POST":
                 return client.post(req, this._body, this._responseType);
             case "PUT":
                 return client.put(req, this._body, this._responseType);
-            case "DELETE":
-                return client.delete(req, this._responseType);
             case "PATCH":
                 return client.patch(req, this._body, this._responseType);
+            case "DELETE":
+                return client.delete(req, this._responseType);
             default:
-                if (this._responseType === "stream") {
-                    return client.stream(req);
-                }
                 return client.get(req, this._responseType);
         }
+    }
+    ensureClient() {
+        return (this._client ??
+            defaultClient ??
+            (defaultClient = new HttpClientImproved_1.default()));
     }
 }
 exports.RequestBuilder = RequestBuilder;

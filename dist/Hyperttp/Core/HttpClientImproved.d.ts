@@ -17,7 +17,7 @@ export default class HttpClientImproved implements HttpClientInterface {
     private options;
     private requestInterceptors;
     private responseInterceptors;
-    private requestMetrics;
+    private metricsManager;
     /**
      * Creates a new instance of HttpClientImproved.
      * @param options Optional configuration options for the HTTP client
@@ -43,7 +43,10 @@ export default class HttpClientImproved implements HttpClientInterface {
      * @param interceptor The interceptor function to add
      */
     addResponseInterceptor(interceptor: ResponseInterceptor): void;
-    /** Closes the HTTP agent to properly terminate keep-alive connections. */
+    /**
+     * @ru Закрывает агент и освобождает ресурсы (keep-alive соединения).
+     * @en Closes the HTTP agent and terminates keep-alive connections.
+     */
     close(): void;
     private log;
     private decompress;
@@ -55,7 +58,6 @@ export default class HttpClientImproved implements HttpClientInterface {
     private parseRetryAfterMs;
     private readBodyWithLimit;
     private sendWithRetry;
-    private parseContentType;
     private xmlParser;
     private parseResponse;
     private requestInternal;

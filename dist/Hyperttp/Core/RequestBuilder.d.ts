@@ -1,3 +1,5 @@
+import { StreamResponse } from "../../Types";
+import HttpClientImproved from "./HttpClientImproved";
 /**
  * Fluent request builder for making HTTP requests with a chainable API.
  * Provides a convenient way to build and send HTTP requests with various options.
@@ -18,11 +20,13 @@ export declare class RequestBuilder<T = any> {
     private _headers;
     private _body?;
     private _responseType;
+    private _client?;
+    private _signal?;
     /**
      * Creates a new request builder for the specified URL.
      * @param url - The target URL for the request
      */
-    constructor(url: string);
+    constructor(url: string, client?: HttpClientImproved);
     /**
      * Sets HTTP headers for the request.
      * @param headers - Object containing header key-value pairs
@@ -56,10 +60,10 @@ export declare class RequestBuilder<T = any> {
      */
     post(): this;
     /**
-     * @ru Устанавливает потоковый режим ответа.
-     * @en Sets streaming response mode.
+     * @ru Выполняет запрос в режиме потока.
+     * @en Executes the request in streaming mode.
      */
-    stream(): this;
+    stream(): Promise<StreamResponse>;
     /**
      * Sets the HTTP method to PUT.
      * @returns The builder instance for chaining
@@ -89,9 +93,18 @@ export declare class RequestBuilder<T = any> {
      */
     jsonBody<T>(body: T): this;
     /**
+     * @ru Устанавливает AbortSignal для отмены запроса.
+     */
+    signal(signal: AbortSignal): this;
+    /**
+     * @ru Устанавливает специфичный таймаут для этого запроса.
+     */
+    timeout(ms: number): this;
+    /**
      * Sends the HTTP request and returns the response.
      * @returns Promise resolving to the response data
      */
     send(): Promise<T>;
+    private ensureClient;
 }
 //# sourceMappingURL=RequestBuilder.d.ts.map
