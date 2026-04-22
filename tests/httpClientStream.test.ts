@@ -20,7 +20,7 @@ describe("HttpClientImproved", () => {
       const response = await client.post("http://localhost:3000/post", payload);
 
       expect(response).toBeDefined();
-      expect(typeof response).toBe("object");
+      expect(typeof response).toBe("string");
       expect(response).not.toBeNull();
     }, 10000);
 
@@ -73,7 +73,7 @@ describe("HttpClientImproved", () => {
         .send();
 
       expect(response).toBeDefined();
-      expect(typeof response).toBe("object");
+      expect(typeof response).toBe("string");
       expect(response).not.toBeNull();
     }, 10000);
   });

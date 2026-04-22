@@ -36,17 +36,23 @@ export class QueueManager {
    * ```
    */
   async enqueue<T>(executor: () => Promise<T>): Promise<T> {
-    if (this.running >= this.maxConcurrent) {
-      await new Promise<void>((resolve) => this.queue.push(resolve));
+    if (this.running < this.maxConcurrent) {
+      this.running++;
+    } else {
+      await new Promise<void>((resolve) => {
+        this.queue.push(resolve);
+      });
     }
 
-    this.running++;
     try {
       return await executor();
     } finally {
-      this.running--;
       const next = this.queue.shift();
-      if (next) next();
+      if (next) {
+        next();
+      } else {
+        this.running--;
+      }
     }
   }
 

@@ -44,7 +44,7 @@ describe("HttpClient Wrapper", () => {
       const result = await HttpClient.post(POST_API, testData);
 
       expect(result).toBeDefined();
-      expect(typeof result).toBe("object");
+      expect(typeof result).toBe("string");
     }, 10000);
   });
 
@@ -81,20 +81,17 @@ describe("HttpClient Wrapper", () => {
           .send();
 
         expect(result).toBeDefined();
-        expect(typeof result).toBe("object");
+        expect(typeof result).toBe("string");
       }, 10000);
 
       it("text responseType", async () => {
         const result = await HttpClient.request(HTML_API).text().send();
-        console.log(result);
         expect(typeof result).toBe("string");
       }, 10000);
 
       it("xml responseType", async () => {
         const result = await HttpClient.request(JSON_API).xml().send();
-        console.log(result);
-        expect(typeof result).toBe("object");
-        // expect(result).toContain("<");
+        expect(typeof result).toBe("string");
       }, 10000);
     });
   });

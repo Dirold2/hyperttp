@@ -1,4 +1,3 @@
-import * as querystring from "querystring";
 import type {
   RequestHeaders,
   RequestQuery,
@@ -6,6 +5,7 @@ import type {
   RequestConfig,
   RequestInterface,
 } from "../Types/request";
+import { stringify } from "querystring";
 
 /**
  * Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data.
@@ -34,6 +34,7 @@ export default class Request implements RequestInterface {
   private headers: RequestHeaders;
   private query: RequestQuery;
   private bodyData: RequestBodyData;
+  private signal?: AbortSignal;
 
   constructor(config: RequestConfig) {
     this.scheme = config.scheme;
@@ -43,6 +44,7 @@ export default class Request implements RequestInterface {
     this.headers = config.headers ?? {};
     this.query = config.query ?? {};
     this.bodyData = config.bodyData ?? {};
+    this.signal = undefined;
   }
 
   private normalizePath(path: string): string {
@@ -103,7 +105,7 @@ export default class Request implements RequestInterface {
   }
 
   getBodyDataString(): string {
-    return querystring.stringify(this.bodyData);
+    return stringify(this.bodyData);
   }
 
   setBodyData(bodyData: RequestBodyData): this {
@@ -129,6 +131,15 @@ export default class Request implements RequestInterface {
       base.searchParams.append(key, String(value));
     }
     return base.toString();
+  }
+
+  setSignal(signal: AbortSignal): this {
+    this.signal = signal;
+    return this;
+  }
+
+  getSignal(): AbortSignal | undefined {
+    return this.signal;
   }
 }
 
@@ -215,5 +226,11 @@ export class PreparedRequest implements RequestInterface {
   }
   getURL(): string {
     return this.request.getURL();
+  }
+  setSignal(signal: AbortSignal): RequestInterface {
+    return this.request.setSignal(signal);
+  }
+  getSignal(): AbortSignal | undefined {
+    return this.request.getSignal();
   }
 }

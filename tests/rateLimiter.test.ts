@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vitest } from "vitest";
 import { RateLimiter } from "../src";
 
 describe("RateLimiter", () => {
@@ -14,7 +14,11 @@ describe("RateLimiter", () => {
     await Promise.all([task(), task(), task()]);
 
     expect(times.length).toBe(3);
-    expect(times[2] - times[0]).toBeGreaterThanOrEqual(90);
+
+    const duration = times[2] - times[0];
+
+    expect(duration).toBeGreaterThanOrEqual(48);
+    expect(duration).toBeLessThan(100);
   });
 
   it("should reset correctly", async () => {
@@ -27,11 +31,15 @@ describe("RateLimiter", () => {
     expect(limiter.currentCount).toBe(0);
   });
 
-  it("cleanup removes old timestamps", async () => {
+  it("should naturally refill tokens over time", async () => {
     const limiter = new RateLimiter({ maxRequests: 2, windowMs: 50 });
-    limiter["timestamps"] = [Date.now() - 60];
-    await limiter.wait();
-    expect(limiter.currentCount).toBe(1);
+
+    limiter.tryConsume(2);
+    expect(limiter.tryConsume(1)).toBe(false);
+
+    await new Promise((resolve) => setTimeout(resolve, 35));
+
+    expect(limiter.tryConsume(1)).toBe(true);
   });
 
   it("remainingRequests correct", async () => {
@@ -43,16 +51,25 @@ describe("RateLimiter", () => {
 
   it("timeToReset accurate", async () => {
     const limiter = new RateLimiter({ maxRequests: 2, windowMs: 1000 });
+
     await limiter.wait();
+    await limiter.wait();
+
     const resetTime = limiter.timeToReset;
-    expect(resetTime).toBeGreaterThan(900);
+
+    expect(resetTime).toBeGreaterThan(400);
+    expect(resetTime).toBeLessThanOrEqual(500);
   });
 
-  it("removeToken works", async () => {
-    const limiter = new RateLimiter({ maxRequests: 2 });
-    const ts = Date.now();
-    limiter["timestamps"].push(ts);
-    expect(limiter.removeToken(ts)).toBe(true);
-    expect(limiter.currentCount).toBe(0);
+  it("manual token consumption works", () => {
+    vitest.useFakeTimers();
+    const limiter = new RateLimiter({ maxRequests: 10, windowMs: 1000 });
+
+    limiter.tryConsume(5);
+
+    expect(limiter.remainingRequests).toBe(5);
+    expect(limiter.currentCount).toBe(5);
+
+    vitest.useRealTimers();
   });
 });

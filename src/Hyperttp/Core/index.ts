@@ -12,21 +12,38 @@
  *
  * @module http-client
  */
-
 export { default as HttpClientImproved } from "./HttpClientImproved.js";
 export { RequestBuilder } from "./RequestBuilder.js";
 export { QueueManager } from "./QueueManager.js";
 export { CacheManager } from "./CacheManager.js";
 export { RateLimiter } from "./RateLimiter.js";
+export { MetricsManager } from "./MetricsManager.js";
 
-export type {
-  HttpClientOptions,
-  HttpClientInterface,
-  RequestInterface,
-  RetryOptions,
-  LogLevel,
-  LoggerFunction,
+export {
+  HttpClientError,
+  TimeoutError,
+  RateLimitError,
 } from "../../Types/index.js";
 
+export type {
+  HttpClientInterface,
+  HttpClientOptions,
+  RequestInterface,
+  RequestConfig,
+  RequestBodyData,
+  RequestHeaders,
+  RequestQuery,
+  ResponseType,
+  StreamResponse,
+  RequestMetrics,
+  RequestInterceptor,
+  ResponseInterceptor,
+  RetryOptions,
+  LogLevel,
+  Method,
+} from "../../Types/index.js";
+
+// Экспорт конфигураций конкретных менеджеров
 export type { CacheManagerOptions } from "./CacheManager.js";
 export type { RateLimiterConfig } from "./RateLimiter.js";
+export type { MetricsConfig } from "./MetricsManager.js";

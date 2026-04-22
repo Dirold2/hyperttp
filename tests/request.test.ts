@@ -97,11 +97,9 @@ describe("PreparedRequest class", () => {
       port: 443,
     });
 
-    // Test empty path
     req.setPath("");
     expect(req.getURI()).toBe("https://api.example.com:443");
 
-    // Test path without leading slash
     req.setPath("v1/users");
     expect(req.getURI()).toBe("https://api.example.com:443/v1/users");
   });

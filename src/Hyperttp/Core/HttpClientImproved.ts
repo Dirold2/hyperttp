@@ -1,9 +1,10 @@
 import { CookieJar } from "tough-cookie";
 import { Agent, request } from "undici";
-import { cookie } from "http-cookie-agent/undici";
+import { CookieAgent } from "http-cookie-agent/undici";
 import * as zlib from "zlib";
 import { promisify } from "util";
-import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import { XMLParser } from "fast-xml-parser";
+import XMLBuilder from "fast-xml-builder";
 
 import { CacheManager } from "./CacheManager";
 import { QueueManager } from "./QueueManager";
@@ -24,6 +25,7 @@ import {
   TimeoutError,
 } from "../../Types";
 import { RequestBuilder } from "./RequestBuilder";
+import { MetricsManager } from "./MetricsManager";
 
 const gunzip = promisify(zlib.gunzip);
 const inflate = promisify(zlib.inflate);
@@ -50,7 +52,7 @@ export default class HttpClientImproved implements HttpClientInterface {
   private requestInterceptors: RequestInterceptor[] = [];
   private responseInterceptors: ResponseInterceptor[] = [];
 
-  private requestMetrics = new Map<string, RequestMetrics>();
+  private metricsManager: MetricsManager;
 
   /**
    * Creates a new instance of HttpClientImproved.
@@ -94,6 +96,10 @@ export default class HttpClientImproved implements HttpClientInterface {
       enableCache: options?.enableCache ?? true,
     };
 
+    this.metricsManager = new MetricsManager({
+      maxHistory: this.options.maxMetricsSize,
+    });
+
     if (this.options.enableCache) {
       this.cache = new CacheManager({
         cacheTTL: this.options.cacheTTL,
@@ -125,14 +131,11 @@ export default class HttpClientImproved implements HttpClientInterface {
       "User-Agent": this.options.userAgent ?? "Hyperttp/0.1.0 Node.js",
     };
 
-    this.agent = new Agent({
+    this.agent = new CookieAgent({
       connections: 1000,
       pipelining: 10,
       keepAliveTimeout: 60000,
       keepAliveMaxTimeout: 600000,
-      interceptors: {
-        Client: [cookie({ jar: this.cookieJar })],
-      },
     });
   }
 
@@ -168,9 +171,14 @@ export default class HttpClientImproved implements HttpClientInterface {
     this.responseInterceptors.push(interceptor);
   }
 
-  /** Closes the HTTP agent to properly terminate keep-alive connections. */
+  /**
+   * @ru Закрывает агент и освобождает ресурсы (keep-alive соединения).
+   * @en Closes the HTTP agent and terminates keep-alive connections.
+   */
   close(): void {
-    this.agent.close();
+    if (this.agent && typeof (this.agent as any).destroy === "function") {
+      (this.agent as any).destroy();
+    }
   }
 
   private log(level: LogLevel, msg: string, meta?: any): void {
@@ -266,15 +274,19 @@ export default class HttpClientImproved implements HttpClientInterface {
   }
 
   private async readBodyWithLimit(body: any): Promise<Buffer> {
-    const buf = Buffer.from(await body.arrayBuffer());
     const limit = this.options.maxResponseBytes;
-    if (typeof limit === "number" && limit > 0 && buf.length > limit) {
-      throw new HttpClientError(
-        `Response too large (${buf.length} bytes), limit is ${limit}`,
-        0,
-      );
+    const chunks: Buffer[] = [];
+    let receivedBytes = 0;
+
+    for await (const chunk of body) {
+      receivedBytes += chunk.length;
+      if (typeof limit === "number" && limit > 0 && receivedBytes > limit) {
+        if (typeof body.destroy === "function") body.destroy();
+        throw new HttpClientError(`Response too large`, "HTTP_ERROR", 0);
+      }
+      chunks.push(Buffer.from(chunk));
     }
-    return buf;
+    return Buffer.concat(chunks);
   }
 
   private async sendWithRetry(
@@ -283,6 +295,7 @@ export default class HttpClientImproved implements HttpClientInterface {
     headers: Record<string, string>,
     body: string | Buffer | undefined,
     metrics?: RequestMetrics,
+    signal?: AbortSignal,
     redirects = 0,
   ): Promise<{
     status: number;
@@ -293,6 +306,26 @@ export default class HttpClientImproved implements HttpClientInterface {
     let lastError: any;
 
     for (let attempt = 0; attempt <= this.retryOptions.maxRetries; attempt++) {
+      const timeoutController = new AbortController();
+      const timeout = this.options.timeout ?? 15000;
+      const timer = setTimeout(() => timeoutController.abort(), timeout);
+
+      const abortHandler = () => timeoutController.abort();
+      if (signal) {
+        if (signal.aborted) {
+          clearTimeout(timer);
+          throw new HttpClientError(
+            "Request aborted by user",
+            "ABORTED",
+            0,
+            undefined,
+            url,
+            method,
+          );
+        }
+        signal.addEventListener("abort", abortHandler);
+      }
+
       try {
         if (this.limiter && this.options.enableRateLimit) {
           await this.limiter.wait();
@@ -305,17 +338,13 @@ export default class HttpClientImproved implements HttpClientInterface {
           body,
         });
 
-        const controller = new AbortController();
-        const timeout = this.options.timeout ?? 15000;
-        const timer = setTimeout(() => controller.abort(), timeout);
-
         try {
           const res = await request(finalConfig.url, {
-            method: finalConfig.method,
+            method: finalConfig.method as any,
             headers: finalConfig.headers,
             body: finalConfig.body,
             dispatcher: this.agent,
-            signal: controller.signal,
+            signal: timeoutController.signal,
           });
 
           clearTimeout(timer);
@@ -329,7 +358,6 @@ export default class HttpClientImproved implements HttpClientInterface {
             url: finalConfig.url,
           });
 
-          // Redirects
           if (
             this.options.followRedirects &&
             [301, 302, 303, 307, 308].includes(response.status) &&
@@ -339,11 +367,9 @@ export default class HttpClientImproved implements HttpClientInterface {
             if (location) {
               const nextUrl = this.resolveRedirect(location, finalConfig.url);
               const redirectMethod = response.status === 303 ? "GET" : method;
-
               const nextHeaders = { ...headers };
               let nextBody = body;
 
-              // If switching to GET, drop body-related headers.
               if (redirectMethod === "GET") {
                 nextBody = undefined;
                 delete nextHeaders["content-type"];
@@ -352,22 +378,19 @@ export default class HttpClientImproved implements HttpClientInterface {
                 delete nextHeaders["Content-Length"];
               }
 
-              this.log("debug", `Redirecting to ${nextUrl}`, {
-                originalUrl: finalConfig.url,
-                status: response.status,
-              });
+              this.log("debug", `Redirecting to ${nextUrl}`);
               return this.sendWithRetry(
                 redirectMethod,
                 nextUrl,
                 nextHeaders,
                 nextBody,
                 metrics,
+                signal,
                 redirects + 1,
               );
             }
           }
 
-          // Retry by status
           if (this.retryOptions.retryStatusCodes.includes(response.status)) {
             metrics && (metrics.retries += 1);
 
@@ -376,11 +399,6 @@ export default class HttpClientImproved implements HttpClientInterface {
                 response.headers["retry-after"],
               );
               if (ra !== undefined) {
-                this.log(
-                  "warn",
-                  `429 Rate limited, waiting Retry-After ${ra}ms`,
-                  { url: finalConfig.url },
-                );
                 if (attempt < this.retryOptions.maxRetries) {
                   await this.sleep(ra);
                   continue;
@@ -389,15 +407,6 @@ export default class HttpClientImproved implements HttpClientInterface {
               }
             }
 
-            this.log(
-              "warn",
-              `Retrying ${method} ${finalConfig.url} due to status ${response.status}`,
-              {
-                attempt: attempt + 1,
-                maxRetries: this.retryOptions.maxRetries,
-              },
-            );
-
             if (attempt < this.retryOptions.maxRetries) {
               await this.sleep(this.calcDelay(attempt));
               continue;
@@ -405,31 +414,48 @@ export default class HttpClientImproved implements HttpClientInterface {
           }
 
           return response;
-        } catch (timeoutErr: any) {
+        } catch (innerErr: any) {
           clearTimeout(timer);
-          if (timeoutErr?.name === "AbortError")
-            throw new TimeoutError(url, timeout);
-          throw timeoutErr;
-        } finally {
-          clearTimeout(timer);
+
+          if (innerErr.name === "AbortError") {
+            if (signal?.aborted) {
+              throw new HttpClientError(
+                "Request aborted by user",
+                "ABORTED",
+                0,
+                innerErr,
+                url,
+                method,
+              );
+            } else {
+              throw new TimeoutError(url, timeout);
+            }
+          }
+          throw innerErr;
         }
       } catch (err: any) {
         lastError = err;
 
-        this.log(
-          "error",
-          `Request error ${method} ${url}: ${err?.message ?? String(err)}`,
-          {
-            attempt: attempt + 1,
-            error: err,
-          },
-        );
+        if (err.code === 'ECONNREFUSED') {
+          this.log("error", `Соединение отклонено: проверьте, запущен ли сервер на ${url}`);
+          throw new HttpClientError(`Request failed: ${err.message}`, 'REQUEST_FAILED', undefined, err, url, method);
+        }
 
+        if (err.code === "ABORTED" || err instanceof TimeoutError) {
+          throw err;
+        }
+
+        this.log("error", `Request error ${method} ${url}: ${err?.message}`);
         metrics && (metrics.retries += 1);
 
         if (attempt < this.retryOptions.maxRetries) {
           await this.sleep(this.calcDelay(attempt));
           continue;
+        }
+      } finally {
+        clearTimeout(timer);
+        if (signal) {
+          signal.removeEventListener("abort", abortHandler);
         }
       }
     }
@@ -438,49 +464,12 @@ export default class HttpClientImproved implements HttpClientInterface {
 
     throw new HttpClientError(
       `Request failed after ${this.retryOptions.maxRetries + 1} attempts`,
+      "REQUEST_FAILED",
       undefined,
       lastError instanceof Error ? lastError : undefined,
       url,
       method,
     );
-  }
-
-  private parseContentType(contentType?: string): {
-    type: string;
-    charset: BufferEncoding;
-  } {
-    if (!contentType) return { type: "text/plain", charset: "utf-8" };
-
-    const parts = contentType.split(";");
-    const type = parts[0].trim();
-
-    const rawCharset =
-      parts
-        .map((p) => p.trim())
-        .find((p) => p.toLowerCase().startsWith("charset="))
-        ?.split("=")[1]
-        ?.trim() || "utf-8";
-
-    const normalized = rawCharset.toLowerCase();
-    const allowed: BufferEncoding[] = [
-      "utf8",
-      "utf-8",
-      "latin1",
-      "ucs2",
-      "ucs-2",
-      "utf16le",
-      "utf-16le",
-      "ascii",
-      "base64",
-      "hex",
-    ];
-    const charset = (
-      allowed.includes(normalized as BufferEncoding)
-        ? (normalized as BufferEncoding)
-        : "utf-8"
-    ) as BufferEncoding;
-
-    return { type, charset };
   }
 
   private xmlParser = new XMLParser({
@@ -490,44 +479,38 @@ export default class HttpClientImproved implements HttpClientInterface {
 
   private async parseResponse(
     res: { status: number; headers: Record<string, any>; body: Buffer },
-    responseType?: ResponseType,
+    responseType: ResponseType = "auto",
   ): Promise<any> {
     try {
-      const contentType = res.headers["content-type"] || "";
       const text = await this.decompress(
         res.body,
         res.headers["content-encoding"] as string | undefined,
       );
+      const trimmed = text.trim();
 
-      const finalType = responseType ?? "json";
-      switch (finalType) {
+      switch (responseType) {
         case "json": {
-          if (contentType.includes("json")) {
-            return JSON.parse(text);
+          if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            return JSON.parse(trimmed);
           }
-
-          if (text.trim().startsWith("<")) {
-            return this.xmlParser.parse(text);
+          if (trimmed.startsWith("<")) {
+            return this.xmlParser.parse(trimmed);
           }
-
-          return { text };
+          return { data: trimmed };
         }
 
         case "xml": {
-          const text = await this.decompress(
-            res.body,
-            res.headers["content-encoding"] as string | undefined,
-          );
-
-          if (text.trim().startsWith("<")) {
-            return text;
-          }
-
+          if (trimmed.startsWith("<")) return trimmed;
           try {
-            const json = JSON.parse(text);
-            return new XMLBuilder({ format: true }).build({ root: json });
+            const obj = JSON.parse(trimmed);
+            const builder = new XMLBuilder({
+              format: true,
+              indentBy: "  ",
+              ignoreAttributes: false,
+            });
+            return builder.build(obj);
           } catch {
-            return String(text);
+            return text;
           }
         }
 
@@ -537,20 +520,29 @@ export default class HttpClientImproved implements HttpClientInterface {
         case "buffer":
           return res.body;
 
-        case "stream":
-          return res.body;
+        case "auto":
+        default: {
+          const contentType = (res.headers["content-type"] || "").toLowerCase();
 
-        default:
+          if (
+            contentType.includes("json") ||
+            trimmed.startsWith("{") ||
+            trimmed.startsWith("[")
+          ) {
+            try {
+              return JSON.parse(trimmed);
+            } catch {
+              return text;
+            }
+          }
+
           return text;
+        }
       }
-    } catch (error) {
-      this.log("error", "Failed to parse response", {
-        error,
-        status: res.status,
-        contentType: res.headers["content-type"],
-      });
+    } catch (err: any) {
       throw new HttpClientError(
-        `Response parsing failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Parsing failed: ${err?.message ?? String(err)}`,
+        "PARSING_ERROR",
         res.status,
       );
     }
@@ -563,17 +555,25 @@ export default class HttpClientImproved implements HttpClientInterface {
     responseType?: ResponseType,
   ): Promise<T> {
     const url = req.getURL();
-    const rawBody = req.getBodyData();
 
+    if (this.metricsManager.isCircuitOpen(url)) {
+      throw new HttpClientError(
+        `Circuit Breaker is OPEN for host: ${new URL(url).host}`,
+        "CIRCUIT_OPEN",
+        503,
+        undefined,
+        url,
+        method,
+      );
+    }
+
+    const rawBody = req.getBodyData();
     const headers: Record<string, string> = {
       ...this.defaultHeaders,
       ...req.getHeaders(),
     };
-
     const isBodyAllowed = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-
     let body: string | Buffer | undefined;
-
     const contentType =
       headers["content-type"] || headers["Content-Type"] || "";
 
@@ -586,9 +586,8 @@ export default class HttpClientImproved implements HttpClientInterface {
         body = new URLSearchParams(rawBody).toString();
       } else {
         body = JSON.stringify(rawBody);
-        if (!contentType) {
+        if (!contentType)
           headers["Content-Type"] = "application/json; charset=utf-8";
-        }
       }
     }
 
@@ -597,7 +596,7 @@ export default class HttpClientImproved implements HttpClientInterface {
     if (method === "GET" && useCache && this.cache) {
       const cached = await this.cache.get<T>(key);
       if (cached) {
-        this.log("debug", `Cache hit for ${url}`);
+        this.log("debug", `Memory cache hit for ${url}`);
         return cached;
       }
     }
@@ -607,7 +606,18 @@ export default class HttpClientImproved implements HttpClientInterface {
       return this.inflight.get(key)!;
     }
 
-    const promise = (async () => {
+    const signal = req.getSignal?.();
+    if (signal?.aborted) {
+      throw new HttpClientError(
+        "Aborted before execution",
+        "ABORTED",
+        0,
+        undefined,
+        url,
+        method,
+      );
+    }
+    const executeRequest = async (): Promise<T> => {
       const metrics: RequestMetrics = {
         startTime: Date.now(),
         endTime: 0,
@@ -621,71 +631,47 @@ export default class HttpClientImproved implements HttpClientInterface {
       };
 
       try {
-        let result: T;
-
         const res = await this.sendWithRetry(
           method,
           url,
           headers,
           body,
           metrics,
+          signal,
         );
-
-        metrics.statusCode = res.status;
-        metrics.bytesReceived = res.body.length;
-        metrics.bytesSent =
-          body instanceof Buffer ? body.length : Buffer.byteLength(body || "");
 
         if (method === "HEAD") {
           metrics.endTime = Date.now();
           metrics.duration = metrics.endTime - metrics.startTime;
-
-          this.requestMetrics.set(key, metrics);
-
-          this.log(
-            "info",
-            `${method} ${url} completed in ${metrics.duration}ms`,
-            metrics,
-          );
-
-          return {
-            status: res.status,
-            headers: res.headers,
-          } as T;
+          this.metricsManager.record(metrics);
+          return { status: res.status, headers: res.headers } as any;
         }
 
         const parsed = await this.parseResponse(res, responseType);
 
         if (method === "GET" && useCache && this.cache) {
           this.cache.set(key, parsed);
-          metrics.cached = true;
         }
-
-        result = parsed as T;
 
         metrics.endTime = Date.now();
         metrics.duration = metrics.endTime - metrics.startTime;
+        metrics.statusCode = res.status;
+        this.metricsManager.record(metrics);
 
-        this.requestMetrics.set(key, metrics);
-
-        this.log(
-          "info",
-          `${method} ${url} completed in ${metrics.duration}ms`,
-          metrics,
-        );
-
-        return result;
+        return parsed as T;
       } catch (error) {
         metrics.endTime = Date.now();
         metrics.duration = metrics.endTime - metrics.startTime;
-
-        this.requestMetrics.set(key, metrics);
-
+        this.metricsManager.record(metrics);
         throw error;
       } finally {
         this.inflight.delete(key);
       }
-    })();
+    };
+
+    const promise = this.options.enableQueue
+      ? this.queue!.enqueue(() => executeRequest())
+      : executeRequest();
 
     this.inflight.set(key, promise);
     return promise;
@@ -700,7 +686,7 @@ export default class HttpClientImproved implements HttpClientInterface {
    */
   get<T = any>(
     req: RequestInterface | string,
-    responseType: ResponseType = "json",
+    responseType: ResponseType = "auto",
   ): Promise<T> {
     if (typeof req === "string") {
       const simpleReq: RequestInterface = {
@@ -724,7 +710,7 @@ export default class HttpClientImproved implements HttpClientInterface {
   post<T = any>(
     req: RequestInterface | string,
     body?: any,
-    responseType: ResponseType = "json",
+    responseType: ResponseType = "auto",
   ): Promise<T> {
     if (typeof req === "string") {
       const simpleReq: RequestInterface = {
@@ -748,7 +734,7 @@ export default class HttpClientImproved implements HttpClientInterface {
   put<T = any>(
     req: RequestInterface | string,
     body?: any,
-    responseType: ResponseType = "json",
+    responseType: ResponseType = "auto",
   ): Promise<T> {
     if (typeof req === "string") {
       const simpleReq: RequestInterface = {
@@ -770,16 +756,15 @@ export default class HttpClientImproved implements HttpClientInterface {
    */
   delete<T = any>(
     req: RequestInterface | string,
-    responseType: ResponseType = "json",
+    responseType: ResponseType = "auto",
   ): Promise<T> {
     if (typeof req === "string") {
-      const client = new HttpClientImproved();
       const simpleReq: RequestInterface = {
         getURL: () => req,
         getBodyData: () => undefined as any,
         getHeaders: () => ({}),
       };
-      return client.delete(simpleReq, responseType);
+      return this.requestInternal<T>("DELETE", simpleReq, false, responseType);
     }
     return this.requestInternal<T>("DELETE", req, false, responseType);
   }
@@ -794,7 +779,7 @@ export default class HttpClientImproved implements HttpClientInterface {
   patch<T = any>(
     req: RequestInterface | string,
     body?: any,
-    responseType: ResponseType = "json",
+    responseType: ResponseType = "auto",
   ): Promise<T> {
     if (typeof req === "string") {
       const simpleReq: RequestInterface = {
@@ -811,62 +796,75 @@ export default class HttpClientImproved implements HttpClientInterface {
    * @ru Получает потоковый ответ (для SSE, больших файлов).
    * @en Gets streaming response (for SSE, large files).
    */
-  stream(req: RequestInterface | string): Promise<StreamResponse> {
-    if (typeof req === "string") {
-      const simpleReq: RequestInterface = {
-        getURL: () => req,
-        getBodyData: () => undefined,
-        getHeaders: () => ({}),
-      };
-      return this.stream(simpleReq);
+  async stream(req: RequestInterface | string): Promise<StreamResponse> {
+    const requestObj: RequestInterface =
+      typeof req === "string"
+        ? {
+            getURL: () => req,
+            getBodyData: () => undefined as any,
+            getHeaders: () => ({}),
+            getSignal: () => undefined,
+          }
+        : req;
+
+    const url = requestObj.getURL();
+    const signal = requestObj.getSignal?.();
+
+    if (signal?.aborted) {
+      throw new HttpClientError(
+        "Request aborted before execution",
+        "ABORTED",
+        0,
+        undefined,
+        url,
+        "GET",
+      );
     }
 
-    return (
-      this.queue && this.options.enableQueue
-        ? (this.queue as QueueManager).enqueue(
-            async function (this: HttpClientImproved) {
-              const url = req.getURL();
-              const headers: Record<string, string> = {
-                ...this.defaultHeaders,
-                ...req.getHeaders(),
-              };
+    const executeStream = async (): Promise<StreamResponse> => {
+      const headers: Record<string, string> = {
+        ...this.defaultHeaders,
+        ...requestObj.getHeaders(),
+      };
 
-              const response = await request(url, {
-                method: "GET",
-                headers,
-                dispatcher: this.agent,
-              });
+      try {
+        const response = await request(url, {
+          method: "GET",
+          headers,
+          dispatcher: this.agent,
+          signal,
+          bodyTimeout: this.options.timeout,
+          headersTimeout: this.options.timeout,
+        });
 
-              return {
-                status: response.statusCode,
-                headers: response.headers as Record<string, any>,
-                body: response.body,
-                url,
-              };
-            }.bind(this),
-          )
-        : async function (this: HttpClientImproved) {
-            const url = req.getURL();
-            const headers = Object.assign(
-              {},
-              this.defaultHeaders,
-              req.getHeaders(),
-            );
+        return {
+          status: response.statusCode,
+          headers: response.headers as Record<string, any>,
+          body: response.body,
+          url,
+        };
+      } catch (err: any) {
+        if (err.name === "AbortError") {
+          throw new HttpClientError(
+            "Stream aborted by user",
+            "ABORTED",
+            0,
+            err,
+            url,
+            "GET",
+          );
+        }
+        throw err;
+      }
+    };
 
-            const response = await request(url, {
-              method: "GET",
-              headers,
-              dispatcher: this.agent,
-            });
+    if (this.queue && this.options.enableQueue) {
+      return this.queue.enqueue(() =>
+        executeStream(),
+      ) as Promise<StreamResponse>;
+    }
 
-            return {
-              status: response.statusCode,
-              headers: response.headers as Record<string, any>,
-              body: response.body,
-              url,
-            };
-          }.bind(this)()
-    ) as Promise<StreamResponse>;
+    return executeStream();
   }
 
   /**
@@ -909,7 +907,7 @@ export default class HttpClientImproved implements HttpClientInterface {
    * Removes performance and timing data from memory.
    */
   clearMetrics(): void {
-    this.requestMetrics.clear();
+    this.metricsManager.clear();
     this.log("info", "Metrics cleared");
   }
 
@@ -919,7 +917,7 @@ export default class HttpClientImproved implements HttpClientInterface {
    * @returns Metrics object if found, undefined otherwise
    */
   getMetrics(key: string): RequestMetrics | undefined {
-    return this.requestMetrics.get(key);
+    return this.metricsManager.get(key);
   }
 
   /**
@@ -927,7 +925,7 @@ export default class HttpClientImproved implements HttpClientInterface {
    * @returns Array of all metrics objects
    */
   getAllMetrics(): RequestMetrics[] {
-    return Array.from(this.requestMetrics.values());
+    return Array.from(this.metricsManager.getAll());
   }
 
   /**
@@ -937,7 +935,7 @@ export default class HttpClientImproved implements HttpClientInterface {
    * @returns RequestBuilder instance for chaining
    */
   request<T = any>(url: string): RequestBuilder<T> {
-    return new RequestBuilder(url);
+    return new RequestBuilder(url, this);
   }
 
   /**

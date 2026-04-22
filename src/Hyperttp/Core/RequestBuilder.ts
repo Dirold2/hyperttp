@@ -1,4 +1,4 @@
-import { RequestInterface, ResponseType } from "../../Types";
+import { RequestInterface, ResponseType, StreamResponse } from "../../Types";
 import HttpClientImproved from "./HttpClientImproved";
 
 let defaultClient: HttpClientImproved | null = null;
@@ -22,14 +22,17 @@ export class RequestBuilder<T = any> {
   private _method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" = "GET";
   private _headers: Record<string, string> = {};
   private _body?: any;
-  private _responseType: ResponseType = "json";
+  private _responseType: ResponseType = "auto"; // Помним про наш новый дефолт
+  private _client?: HttpClientImproved;
+  private _signal?: AbortSignal;
 
   /**
    * Creates a new request builder for the specified URL.
    * @param url - The target URL for the request
    */
-  constructor(url: string) {
+  constructor(url: string, client?: HttpClientImproved) {
     this._url = url;
+    this._client = client;
   }
 
   /**
@@ -89,12 +92,17 @@ export class RequestBuilder<T = any> {
   }
 
   /**
-   * @ru Устанавливает потоковый режим ответа.
-   * @en Sets streaming response mode.
+   * @ru Выполняет запрос в режиме потока.
+   * @en Executes the request in streaming mode.
    */
-  stream(): this {
-    this._responseType = "stream";
-    return this;
+  async stream(): Promise<StreamResponse> {
+    const client = this.ensureClient();
+    return client.stream({
+      getURL: () => this._url,
+      getHeaders: () => this._headers,
+      getBodyData: () => this._body,
+      getSignal: () => this._signal,
+    });
   }
 
   /**
@@ -151,36 +159,58 @@ export class RequestBuilder<T = any> {
   }
 
   /**
+   * @ru Устанавливает AbortSignal для отмены запроса.
+   */
+  signal(signal: AbortSignal): this {
+    this._signal = signal;
+    return this;
+  }
+
+  /**
+   * @ru Устанавливает специфичный таймаут для этого запроса.
+   */
+  timeout(ms: number): this {
+    this._signal = AbortSignal.timeout(ms);
+    return this;
+  }
+
+  /**
    * Sends the HTTP request and returns the response.
    * @returns Promise resolving to the response data
    */
   async send(): Promise<T> {
-    const client = defaultClient ?? (defaultClient = new HttpClientImproved());
+    const client = this.ensureClient();
+
     const req: RequestInterface = {
       getURL: () => this._url,
       getBodyData: () => this._body,
       getHeaders: () => this._headers,
+      getSignal: () => this._signal,
     };
 
+    if (this._responseType === "stream") {
+      return (await client.stream(req)) as any;
+    }
+
     switch (this._method) {
-      case "GET":
-        if (this._responseType === "stream") {
-          return client.stream(req) as any;
-        }
-        return client.get(req, this._responseType);
       case "POST":
         return client.post(req, this._body, this._responseType);
       case "PUT":
         return client.put(req, this._body, this._responseType);
-      case "DELETE":
-        return client.delete(req, this._responseType);
       case "PATCH":
         return client.patch(req, this._body, this._responseType);
+      case "DELETE":
+        return client.delete(req, this._responseType);
       default:
-        if (this._responseType === "stream") {
-          return client.stream(req) as any;
-        }
         return client.get(req, this._responseType);
     }
+  }
+
+  private ensureClient(): HttpClientImproved {
+    return (
+      this._client ??
+      defaultClient ??
+      (defaultClient = new HttpClientImproved())
+    );
   }
 }
