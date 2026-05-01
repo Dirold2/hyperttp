@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CacheManager = void 0;
 const lru_cache_1 = require("lru-cache");
+/**
+ * @class CacheManager
+ */
 class CacheManager {
     cache;
     ttl;
@@ -9,9 +12,13 @@ class CacheManager {
         this.ttl = options?.cacheTTL ?? 300_000;
         this.cache = new lru_cache_1.LRUCache({
             max: options?.cacheMaxSize ?? 500,
-            updateAgeOnGet: false,
+            ttl: this.ttl,
+            updateAgeOnGet: true,
         });
     }
+    /**
+     * @en Retrieves data along with HTTP validation metadata.
+     */
     async getWithMetadata(key) {
         const entry = this.cache.get(key);
         if (!entry)
@@ -24,6 +31,9 @@ class CacheManager {
             isExpired,
         };
     }
+    /**
+     * @en Stores data with optional ETag and Last-Modified headers.
+     */
     async setWithMetadata(key, data, meta) {
         this.cache.set(key, {
             data,
@@ -32,30 +42,33 @@ class CacheManager {
             timestamp: Date.now(),
         });
     }
+    /**
+     * @en Gets an item from cache.
+     */
     async get(key) {
         const entry = this.cache.get(key);
         if (!entry)
             return undefined;
-        const isExpired = Date.now() - entry.timestamp > this.ttl;
-        if (isExpired) {
-            this.cache.delete(key);
-            return undefined;
-        }
-        entry.timestamp = Date.now();
-        this.cache.set(key, entry);
         return entry.data;
     }
+    /**
+     * @en Standard async set method.
+     */
     async set(key, value) {
-        await this.setWithMetadata(key, value, {});
+        this.cache.set(key, {
+            data: value,
+            timestamp: Date.now(),
+        });
     }
+    /**
+     * @en Checks if key exists and is not expired.
+     */
     async has(key) {
         const entry = this.cache.get(key);
         if (!entry)
             return false;
-        // Если время жизни истекло — для метода has() записи "нет"
         const isExpired = Date.now() - entry.timestamp > this.ttl;
         if (isExpired) {
-            // Опционально: удаляем сразу, чтобы не забивать память
             this.cache.delete(key);
             return false;
         }
@@ -67,11 +80,15 @@ class CacheManager {
     async clear() {
         this.cache.clear();
     }
+    // --- Synchronous Methods ---
     getSync(key) {
-        return this.cache.get(key);
+        return this.cache.get(key)?.data;
     }
     setSync(key, value) {
-        this.setWithMetadata(key, value, {});
+        this.cache.set(key, {
+            data: value,
+            timestamp: Date.now(),
+        });
     }
     hasSync(key) {
         return this.cache.has(key);

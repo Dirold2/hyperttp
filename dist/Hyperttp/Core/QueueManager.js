@@ -1,79 +1,66 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.QueueManager = void 0;
-/**
- * Manages concurrent execution of asynchronous tasks with a configurable limit.
- * Uses a queue-based approach to prevent overwhelming the system with too many
- * simultaneous operations.
- *
- * @example
- * ```ts
- * const queue = new QueueManager(5); // Max 5 concurrent tasks
- * const result = await queue.enqueue(() => fetch('https://api.example.com'));
- * ```
- */
 class QueueManager {
     maxConcurrent;
-    queue = [];
     running = 0;
-    /**
-     * Creates a new QueueManager instance
-     * @param maxConcurrent - Maximum number of tasks that can run simultaneously (default: 50)
-     */
+    size = 0;
+    head = null;
+    tail = null;
     constructor(maxConcurrent = 50) {
         this.maxConcurrent = maxConcurrent;
     }
-    /**
-     * Enqueues a task for execution, respecting the concurrency limit.
-     * If the limit is reached, the task will wait in queue until a slot becomes available.
-     *
-     * @template T - The return type of the executor function
-     * @param executor - An async function to execute
-     * @returns A promise that resolves with the executor's result
-     *
-     * @example
-     * ```ts
-     * const data = await queue.enqueue(async () => {
-     *   const response = await fetch('https://api.example.com/data');
-     *   return response.json();
-     * });
-     * ```
-     */
     async enqueue(executor) {
         if (this.running < this.maxConcurrent) {
-            this.running++;
+            return this.runTask(executor);
         }
-        else {
-            await new Promise((resolve) => {
-                this.queue.push(resolve);
-            });
-        }
-        try {
-            return await executor();
-        }
-        finally {
-            const next = this.queue.shift();
-            if (next) {
-                next();
+        return new Promise((resolve, reject) => {
+            const newNode = { executor, resolve, reject, next: null };
+            if (!this.tail) {
+                this.head = newNode;
+                this.tail = newNode;
             }
             else {
-                this.running--;
+                this.tail.next = newNode;
+                this.tail = newNode;
             }
+            this.size++;
+        });
+    }
+    async runTask(executor, resolve, reject) {
+        this.running++;
+        try {
+            const result = await executor();
+            resolve?.(result);
+            return result;
+        }
+        catch (error) {
+            reject?.(error);
+            throw error;
+        }
+        finally {
+            this.running--;
+            this.processQueue();
         }
     }
-    /**
-     * Gets the current number of running tasks
-     * @returns The number of currently executing tasks
-     */
+    processQueue() {
+        while (this.running < this.maxConcurrent && this.head) {
+            const task = this.head;
+            this.head = this.head.next;
+            if (!this.head) {
+                this.tail = null;
+            }
+            this.size--;
+            queueMicrotask(() => {
+                this.runTask(task.executor, task.resolve, task.reject);
+            });
+        }
+    }
     get activeCount() {
         return this.running;
     }
-    /**
-     * Gets the number of tasks waiting in queue
-     * @returns The number of queued tasks
-     */
     get queuedCount() {
-        return this.queue.length;
+        return this.size;
     }
 }
 exports.QueueManager = QueueManager;

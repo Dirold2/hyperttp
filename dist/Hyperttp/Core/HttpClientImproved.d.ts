@@ -1,150 +1,114 @@
-import { CookieJar } from "tough-cookie";
-import { HttpClientInterface, HttpClientOptions, RequestInterceptor, RequestInterface, RequestMetrics, ResponseInterceptor, ResponseType, StreamResponse } from "../../Types";
-import { RequestBuilder } from "./RequestBuilder";
+import { RequestBuilder } from "./RequestBuilder.js";
+import type { HttpClientInterface, HttpClientOptions, RequestInterface, RequestMetrics, ResponseType, StreamResponse } from "../../Types/index.js";
 /**
- * Advanced HTTP client with built-in caching, rate limiting, request queuing,
- * automatic retries, cookie management, and response decompression.
+ * @class HttpClientImproved
+ * @en High-performance HTTP client with built-in caching, queuing, rate limiting, and metrics.
+ * @ru Высокопроизводительный HTTP-клиент со встроенным кэшированием, очередями, лимитами и метриками.
  */
 export default class HttpClientImproved implements HttpClientInterface {
-    private cookieJar;
     private agent;
+    private options;
     private cache?;
     private queue?;
     private limiter?;
-    private inflight;
-    private retryOptions;
-    private defaultHeaders;
-    private options;
-    private requestInterceptors;
-    private responseInterceptors;
     private metricsManager;
+    private interceptors;
+    private transformer;
+    private executor;
     /**
-     * Creates a new instance of HttpClientImproved.
-     * @param options Optional configuration options for the HTTP client
+     * @en Internal map to track active requests for deduplication and cancellation.
+     * @ru Внутренняя карта для отслеживания активных запросов (дедупликация и отмена).
      */
+    private inflight;
+    private defaultHeaders;
     constructor(options?: HttpClientOptions);
     /**
-     * Sets default headers that will be applied to all outgoing requests.
-     * @param headers An object containing header names and values
+     * @en Core internal method for handling all HTTP requests.
+     * @ru Основной внутренний метод для обработки всех HTTP-запросов.
+     * @param method HTTP method (GET, POST, etc.)
+     * @param req Request object
+     * @param useCache Whether to use caching for this request
+     * @param responseType Expected response format
      */
-    setDefaultHeaders(headers: Record<string, string>): void;
-    /**
-     * Returns the cookie jar used for managing HTTP cookies.
-     * @returns The CookieJar instance
-     */
-    getCookieJar(): CookieJar;
-    /**
-     * Adds a request interceptor to modify requests before they are sent.
-     * @param interceptor The interceptor function to add
-     */
-    addRequestInterceptor(interceptor: RequestInterceptor): void;
-    /**
-     * Adds a response interceptor to modify responses after they are received.
-     * @param interceptor The interceptor function to add
-     */
-    addResponseInterceptor(interceptor: ResponseInterceptor): void;
-    /**
-     * @ru Закрывает агент и освобождает ресурсы (keep-alive соединения).
-     * @en Closes the HTTP agent and terminates keep-alive connections.
-     */
-    close(): void;
-    private log;
-    private decompress;
-    private calcDelay;
-    private sleep;
-    private applyRequestInterceptors;
-    private applyResponseInterceptors;
-    private resolveRedirect;
-    private parseRetryAfterMs;
-    private readBodyWithLimit;
-    private sendWithRetry;
-    private xmlParser;
-    private parseResponse;
     private requestInternal;
     /**
-     * Performs an HTTP GET request.
-     * @param req The request object containing URL and headers
-     * @param responseType Optional response parsing type
-     * @returns A promise that resolves to the parsed response
-     * @template T The expected response type
+     * @en Performs an HTTP GET request.
+     * @ru Выполняет HTTP GET запрос.
+     * @param req Request URL or Request object
+     * @param responseType Expected response format
      */
     get<T = any>(req: RequestInterface | string, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs an HTTP POST request.
-     * @param req The request object containing URL, body, and headers
-     * @param responseType Optional response parsing type
-     * @returns A promise that resolves to the parsed response
-     * @template T The expected response type
+     * @en Performs an HTTP POST request.
+     * @ru Выполняет HTTP POST запрос.
+     * @param req Request URL or Request object
+     * @param body Request body data
+     * @param responseType Expected response format
      */
     post<T = any>(req: RequestInterface | string, body?: any, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs an HTTP PUT request.
-     * @param req The request object containing URL, body, and headers
-     * @param responseType Optional response parsing type
-     * @returns A promise that resolves to the parsed response
-     * @template T The expected response type
+     * @en Performs an HTTP PUT request.
+     * @ru Выполняет HTTP PUT запрос.
      */
     put<T = any>(req: RequestInterface | string, body?: any, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs an HTTP DELETE request.
-     * @param req The request object containing URL and headers
-     * @param responseType Optional response parsing type
-     * @returns A promise that resolves to the parsed response
-     * @template T The expected response type
+     * @en Performs an HTTP DELETE request.
+     * @ru Выполняет HTTP DELETE запрос.
      */
     delete<T = any>(req: RequestInterface | string, responseType?: ResponseType): Promise<T>;
     /**
-     * Performs an HTTP PATCH request.
-     * @param req The request object containing URL, body, and headers
-     * @param responseType Optional response parsing type
-     * @returns A promise that resolves to the parsed response
-     * @template T The expected response type
+     * @en Performs an HTTP PATCH request.
+     * @ru Выполняет HTTP PATCH запрос.
      */
     patch<T = any>(req: RequestInterface | string, body?: any, responseType?: ResponseType): Promise<T>;
     /**
-     * @ru Получает потоковый ответ (для SSE, больших файлов).
-     * @en Gets streaming response (for SSE, large files).
+     * @en Creates a RequestBuilder for a fluent API approach.
+     * @ru Создает RequestBuilder для использования Fluent API.
+     * @example client.request('url').get().send();
      */
-    stream(req: RequestInterface | string): Promise<StreamResponse>;
+    request<T = any>(url: string): RequestBuilder<T>;
     /**
-     * Performs an HTTP HEAD request.
-     * @param req The request object containing URL and headers
-     * @returns A promise that resolves when the request completes
+     * @en Releases all resources, aborts active requests, and closes connections.
+     * @ru Освобождает ресурсы клиента, отменяет активные запросы и закрывает соединения.
+     */
+    destroy(): Promise<void>;
+    /**
+     * @en Performs an HTTP HEAD request.
+     * @ru Выполняет HTTP HEAD запрос.
      */
     head(req: RequestInterface | string): Promise<{
         status: number;
         headers: Record<string, any>;
     }>;
     /**
-     * Clears the request cache.
+     * @en Executes a request and returns an AsyncIterable stream.
+     * @ru Выполняет запрос и возвращает итерируемый поток данных.
      */
-    clearCache(): Promise<void>;
+    stream(req: RequestInterface | string): Promise<StreamResponse>;
     /**
-     * Clears all collected request metrics.
-     * Removes performance and timing data from memory.
+     * @en Clears the internal cache.
+     * @ru Полностью очищает внутренний кэш клиента.
+     */
+    clearCache(): void;
+    /**
+     * @en Clears all collected performance metrics.
+     * @ru Очищает все собранные метрики производительности.
      */
     clearMetrics(): void;
     /**
-     * Retrieves metrics for a specific request by its URL.
-     * @param key - The URL or cache key to retrieve metrics for
-     * @returns Metrics object if found, undefined otherwise
+     * @en Retrieves metrics for a specific URL.
+     * @ru Получает метрики для конкретного URL.
      */
     getMetrics(key: string): RequestMetrics | undefined;
     /**
-     * Retrieves all collected request metrics.
-     * @returns Array of all metrics objects
+     * @en Retrieves all stored request metrics.
+     * @ru Получает список всех сохраненных метрик.
      */
     getAllMetrics(): RequestMetrics[];
     /**
-     * Creates a fluent request builder for making HTTP requests.
-     * Provides a chainable API for building and sending requests.
-     * @param url - The target URL for the request
-     * @returns RequestBuilder instance for chaining
-     */
-    request<T = any>(url: string): RequestBuilder<T>;
-    /**
-     * Returns current statistics about the HTTP client's state.
-     * @returns An object containing cache size, request counts, and rate limit information
+     * @en Returns real-time statistics about the client's internal state.
+     * @ru Возвращает статистику состояния клиента в реальном времени.
+     * @returns Cache size, active requests, queue state, etc.
      */
     getStats(): {
         cacheSize: number;
@@ -153,5 +117,11 @@ export default class HttpClientImproved implements HttpClientInterface {
         activeRequests: number;
         currentRateLimit: number;
     };
+    private normalizeRequest;
+    private applyDefaultOptions;
+    private prepareRequestData;
+    private createInitialMetrics;
+    private recordSuccess;
+    private recordError;
 }
 //# sourceMappingURL=HttpClientImproved.d.ts.map

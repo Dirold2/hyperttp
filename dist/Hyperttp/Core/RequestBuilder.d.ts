@@ -1,17 +1,15 @@
-import { StreamResponse } from "../../Types";
 import HttpClientImproved from "./HttpClientImproved";
 /**
- * Fluent request builder for making HTTP requests with a chainable API.
- * Provides a convenient way to build and send HTTP requests with various options.
- *
- * @example
+ * @class RequestBuilder
+ * @en Fluent request builder for creating HTTP requests with a chainable API.
+ * @ru Fluent request builder для создания HTTP-запросов. Позволяет собирать параметры запроса в цепочку.
+ * * @example
  * ```ts
- * const client = new HttpClientImproved();
- * const response = await client.request('https://api.example.com/data')
- *   .headers({ 'Authorization': 'Bearer token' })
- *   .query({ limit: 10, offset: 0 })
- *   .json()
- *   .send();
+ * const user = await client.request('[https://api.example.com/users](https://api.example.com/users)')
+ * .post()
+ * .jsonBody({ name: 'John' })
+ * .headers({ 'X-Custom-Header': 'value' })
+ * .send();
  * ```
  */
 export declare class RequestBuilder<T = any> {
@@ -20,91 +18,64 @@ export declare class RequestBuilder<T = any> {
     private _headers;
     private _body?;
     private _responseType;
-    private _client?;
+    private _client;
     private _signal?;
+    constructor(url: string, client: HttpClientImproved);
     /**
-     * Creates a new request builder for the specified URL.
-     * @param url - The target URL for the request
-     */
-    constructor(url: string, client?: HttpClientImproved);
-    /**
-     * Sets HTTP headers for the request.
-     * @param headers - Object containing header key-value pairs
-     * @returns The builder instance for chaining
+     * @en Appends multiple headers to the request.
+     * @ru Добавляет несколько заголовков к запросу.
      */
     headers(headers: Record<string, string>): this;
     /**
-     * Sets the request body data.
-     * @param bodyData - The body data to send with the request
-     * @returns The builder instance for chaining
+     * @en Sets the request body.
+     * @ru Устанавливает тело запроса.
      */
     body(bodyData: any): this;
     /**
-     * Sets the response type to JSON.
-     * @returns The builder instance for chaining
+     * @en Sets the body and ensures Content-Type is application/json.
+     * @ru Устанавливает тело запроса и заголовок Content-Type: application/json.
      */
-    json(): this;
+    jsonBody<B>(body: B): this;
     /**
-     * Sets the response type to plain text.
-     * @returns The builder instance for chaining
-     */
-    text(): this;
-    /**
-     * Sets the response type to XML.
-     * @returns The builder instance for chaining
-     */
-    xml(): this;
-    /**
-     * Sets the HTTP method to POST.
-     * @returns The builder instance for chaining
-     */
-    post(): this;
-    /**
-     * @ru Выполняет запрос в режиме потока.
-     * @en Executes the request in streaming mode.
-     */
-    stream(): Promise<StreamResponse>;
-    /**
-     * Sets the HTTP method to PUT.
-     * @returns The builder instance for chaining
-     */
-    put(): this;
-    /**
-     * Sets the HTTP method to PATCH.
-     * @returns The builder instance for chaining
-     */
-    patch(): this;
-    /**
-     * Sets the HTTP method to DELETE.
-     * @returns The builder instance for chaining
-     */
-    delete(): this;
-    /**
-     * Adds query parameters to the URL.
-     * @param params - Object containing query parameter key-value pairs
-     * @returns The builder instance for chaining
+     * @en Adds URL query parameters.
+     * @ru Добавляет параметры запроса в URL (search params).
      */
     query(params: Record<string, string | number | boolean>): this;
+    /** @en Set method to POST */
+    post(): this;
+    /** @en Set method to PUT */
+    put(): this;
+    /** @en Set method to PATCH */
+    patch(): this;
+    /** @en Set method to DELETE */
+    delete(): this;
+    /** @en Set method to HEAD */
+    head(): this;
+    /** @en Set response type to JSON */
+    json(): this;
+    /** @en Set response type to Plain Text */
+    text(): this;
+    /** @en Set response type to XML */
+    xml(): this;
+    /** @en Set response type to Buffer */
+    buffer(): this;
+    /** @en Set response type to Stream (AsyncIterable) */
+    stream(): this;
     /**
-     * Sets a JSON body for the request.
-     * Automatically sets the Content-Type header to application/json.
-     * @param body - The JSON body data
-     * @returns The builder instance for chaining
-     */
-    jsonBody<T>(body: T): this;
-    /**
-     * @ru Устанавливает AbortSignal для отмены запроса.
+     * @en Attaches an external AbortSignal for manual cancellation.
+     * @ru Привязывает внешний AbortSignal для ручной отмены запроса.
      */
     signal(signal: AbortSignal): this;
     /**
-     * @ru Устанавливает специфичный таймаут для этого запроса.
+     * @en Creates a timeout signal for this specific request.
+     * @ru Устанавливает таймаут для конкретно этого запроса.
      */
     timeout(ms: number): this;
     /**
-     * Sends the HTTP request and returns the response.
-     * @returns Promise resolving to the response data
+     * @en Finalizes and sends the request.
+     * @ru Финализирует и отправляет запрос.
+     * @returns Promise resolving to the expected type T or StreamResponse.
      */
     send(): Promise<T>;
-    private ensureClient;
 }
 //# sourceMappingURL=RequestBuilder.d.ts.map
