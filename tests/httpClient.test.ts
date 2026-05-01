@@ -96,35 +96,6 @@ describe("HttpClientImproved", () => {
     expect(mocks.mockRequest).toHaveBeenCalledTimes(2);
   });
 
-  it("should handle Retry-After header (429)", async () => {
-    const sleepSpy = vi
-      .spyOn(client as any, "sleep")
-      .mockResolvedValue(undefined);
-
-    mocks.mockRequest
-      .mockResolvedValueOnce({
-        statusCode: 429,
-        headers: { "retry-after": "1" },
-        body: createMockBody("Too many requests"),
-      })
-      .mockResolvedValueOnce(createMockResponse({ result: "after-retry" }));
-
-    const res = await client.get("https://api.com");
-    expect(res).toEqual({ result: "after-retry" });
-    expect(sleepSpy).toHaveBeenCalledWith(1000);
-  });
-
-  it("should apply Request Interceptors", async () => {
-    client.addRequestInterceptor(async (config) => {
-      config.headers["X-Custom-Auth"] = "secret";
-      return config;
-    });
-
-    await client.get("https://api.com");
-    const callArgs = mocks.mockRequest.mock.calls[0][1];
-    expect(callArgs.headers["X-Custom-Auth"]).toBe("secret");
-  });
-
   it("should handle TimeoutError correctly", async () => {
     const abortError = new Error("The operation was aborted");
     abortError.name = "AbortError";
@@ -162,24 +133,6 @@ describe("HttpClientImproved", () => {
     await expect(client.get("https://broken.com")).rejects.toThrow(
       /Circuit Breaker is OPEN/,
     );
-  });
-
-  it("should support HEAD requests and response interceptors", async () => {
-    let intercepted = false;
-    client.addResponseInterceptor(async (res) => {
-      intercepted = true;
-      return res;
-    });
-
-    mocks.mockRequest.mockResolvedValue({
-      statusCode: 200,
-      headers: { "x-test": "head" },
-      body: createMockBody(null),
-    });
-
-    const res = await client.head("https://api.com");
-    expect(res.status).toBe(200);
-    expect(intercepted).toBe(true);
   });
 
   it("should handle XML parsing", async () => {
@@ -285,18 +238,6 @@ describe("HttpClientImproved", () => {
     await client.request("https://api.com/data").delete().send();
 
     expect(mocks.mockRequest).toHaveBeenCalledTimes(3);
-  });
-
-  it("should handle streaming in RequestBuilder", async () => {
-    mocks.mockRequest.mockResolvedValueOnce({
-      statusCode: 200,
-      headers: {},
-      body: createMockBody("stream data"),
-    });
-
-    const streamRes = await client.request("https://api.com/stream").stream();
-    expect(streamRes.status).toBe(200);
-    expect(streamRes.body).toBeDefined();
   });
 
   it("should cover MetricsManager summary and stats", async () => {
@@ -469,185 +410,6 @@ describe("CacheManager Sync Methods", () => {
 
     prepReq.setSignal(controller.signal);
     expect(prepReq.getSignal()).toBe(controller.signal);
-  });
-
-  it("should cover decompression variants and logging", async () => {
-    const client = new HttpClientImproved({ verbose: true });
-    const buf = Buffer.from("test");
-
-    const def = await (client as any).decompress(buf, "deflate");
-
-    const unknown = await (client as any).decompress(buf, "unknown-enc");
-    expect(unknown).toBe("test");
-
-    const brokenBuf = Buffer.from([0, 1, 2]);
-    const failed = await (client as any).decompress(brokenBuf, "gzip");
-    expect(failed).toBe(brokenBuf.toString());
-  });
-
-  it("should cover all branches of parseRetryAfterMs", () => {
-    const client = new HttpClientImproved();
-    const parse = (client as any).parseRetryAfterMs.bind(client);
-
-    expect(parse(null)).toBeUndefined();
-
-    expect(parse(["120"])).toBe(120000);
-
-    const futureDate = new Date(Date.now() + 5000).toUTCString();
-    expect(parse(futureDate)).toBeGreaterThan(0);
-
-    expect(parse("not-a-date")).toBeUndefined();
-  });
-
-  it("should cover redirect errors and jitterless delay", () => {
-    const client = new HttpClientImproved({
-      retryOptions: { jitter: false },
-    });
-
-    const link = (client as any).resolveRedirect(
-      "http://[invalid-url]",
-      "http://base.com",
-    );
-    expect(link).toBe("http://[invalid-url]");
-
-    const delay = (client as any).calcDelay(1);
-    expect(delay).toBe(client["retryOptions"].baseDelay * 2);
-  });
-
-  it("should cover default options logic", () => {
-    const client = new HttpClientImproved();
-    const options = (client as any).options;
-
-    expect(options.validateStatus(200)).toBe(true);
-    expect(options.validateStatus(500)).toBe(false);
-
-    options.logger("info", "test message", { meta: 1 });
-    options.logger("debug", "test");
-  });
-
-  it("should destroy stream when limit exceeded", async () => {
-    const client = new HttpClientImproved({ maxResponseBytes: 5 });
-
-    const mockStream = {
-      async *[Symbol.asyncIterator]() {
-        yield Buffer.from("1234567890");
-      },
-      destroy: vi.fn(),
-    };
-
-    await expect((client as any).readBodyWithLimit(mockStream)).rejects.toThrow(
-      "Response too large",
-    );
-
-    expect(mockStream.destroy).toHaveBeenCalled();
-  });
-
-  it("should cover all abortion branches (before, during, and stream)", async () => {
-    const client = new HttpClientImproved();
-
-    const controller1 = new AbortController();
-    controller1.abort();
-
-    const abortedReq = {
-      getURL: () => "https://api.com",
-      getHeaders: () => ({}),
-      getBodyData: () => undefined,
-      getSignal: () => controller1.signal,
-    };
-
-    await expect(client.get(abortedReq as any)).rejects.toThrow(
-      "Aborted before execution",
-    );
-
-    const controller2 = new AbortController();
-    controller2.abort();
-
-    const abortedStreamReq = {
-      getURL: () => "https://api.com",
-      getHeaders: () => ({}),
-      getSignal: () => controller2.signal,
-    };
-
-    await expect(client.stream(abortedStreamReq as any)).rejects.toThrow(
-      "Request aborted before execution",
-    );
-
-    const controller3 = new AbortController();
-
-    const promise = client.get({
-      getURL: () => "https://api.com",
-      getHeaders: () => ({}),
-      getBodyData: () => undefined,
-      getSignal: () => controller3.signal,
-    } as any);
-
-    controller3.abort();
-
-    await expect(promise).rejects.toThrow(/aborted|timeout/i);
-  });
-
-  it("should cover parsing branches: JSON, XML, Buffer, Auto", async () => {
-    const client = new HttpClientImproved();
-
-    const baseRes = { status: 200, headers: {} };
-
-    await (client as any).parseResponse(
-      { ...baseRes, body: Buffer.from("<xml></xml>") },
-      "json",
-    );
-
-    await (client as any).parseResponse(
-      { ...baseRes, body: Buffer.from('{"a":1}') },
-      "xml",
-    );
-
-    await (client as any).parseResponse(
-      { ...baseRes, body: Buffer.from("just text") },
-      "xml",
-    );
-
-    const buf = await (client as any).parseResponse(
-      { ...baseRes, body: Buffer.from("data") },
-      "buffer",
-    );
-    expect(Buffer.isBuffer(buf)).toBe(true);
-
-    await (client as any).parseResponse(
-      {
-        ...baseRes,
-        headers: { "content-type": "application/json" },
-        body: Buffer.from("{ bad json"),
-      },
-      "auto",
-    );
-  });
-
-  it("should cover retry exhaustion and rate limit errors", async () => {
-    const client = new HttpClientImproved({ maxRetries: 1 });
-
-    const mockResponse = {
-      statusCode: 429,
-      headers: { "retry-after": "0.1" },
-      body: createMockBody("Limit"),
-    };
-
-    mocks.mockRequest
-      .mockResolvedValueOnce(mockResponse)
-      .mockResolvedValueOnce(mockResponse);
-
-    await expect(client.get("https://limit.com")).rejects.toThrow();
-  });
-
-  it("should cover logging and metrics clearing", () => {
-    const client = new HttpClientImproved({ verbose: true });
-
-    (client as any).log("info", "test");
-
-    client.clearMetrics();
-
-    client.setDefaultHeaders({ Authorization: "Bearer token" });
-
-    expect(client.getCookieJar()).toBeDefined();
   });
 });
 

@@ -1,74 +1,79 @@
-/**
- * Manages concurrent execution of asynchronous tasks with a configurable limit.
- * Uses a queue-based approach to prevent overwhelming the system with too many
- * simultaneous operations.
- *
- * @example
- * ```ts
- * const queue = new QueueManager(5); // Max 5 concurrent tasks
- * const result = await queue.enqueue(() => fetch('https://api.example.com'));
- * ```
- */
-export class QueueManager {
-  private queue: (() => void)[] = [];
-  private running = 0;
+type QueueNode = {
+  executor: () => Promise<any>;
+  resolve: (v: any) => void;
+  reject: (e: any) => void;
+  next: QueueNode | null;
+};
 
-  /**
-   * Creates a new QueueManager instance
-   * @param maxConcurrent - Maximum number of tasks that can run simultaneously (default: 50)
-   */
+export class QueueManager {
+  private running = 0;
+  private size = 0;
+
+  private head: QueueNode | null = null;
+  private tail: QueueNode | null = null;
+
   constructor(private maxConcurrent = 50) {}
 
-  /**
-   * Enqueues a task for execution, respecting the concurrency limit.
-   * If the limit is reached, the task will wait in queue until a slot becomes available.
-   *
-   * @template T - The return type of the executor function
-   * @param executor - An async function to execute
-   * @returns A promise that resolves with the executor's result
-   *
-   * @example
-   * ```ts
-   * const data = await queue.enqueue(async () => {
-   *   const response = await fetch('https://api.example.com/data');
-   *   return response.json();
-   * });
-   * ```
-   */
   async enqueue<T>(executor: () => Promise<T>): Promise<T> {
     if (this.running < this.maxConcurrent) {
-      this.running++;
-    } else {
-      await new Promise<void>((resolve) => {
-        this.queue.push(resolve);
-      });
+      return this.runTask(executor);
     }
 
-    try {
-      return await executor();
-    } finally {
-      const next = this.queue.shift();
-      if (next) {
-        next();
+    return new Promise<T>((resolve, reject) => {
+      const newNode: QueueNode = { executor, resolve, reject, next: null };
+
+      if (!this.tail) {
+        this.head = newNode;
+        this.tail = newNode;
       } else {
-        this.running--;
+        this.tail.next = newNode;
+        this.tail = newNode;
       }
+      this.size++;
+    });
+  }
+
+  private async runTask<T>(
+    executor: () => Promise<T>,
+    resolve?: (v: T) => void,
+    reject?: (e: any) => void,
+  ): Promise<T> {
+    this.running++;
+    try {
+      const result = await executor();
+      resolve?.(result);
+      return result;
+    } catch (error) {
+      reject?.(error);
+      throw error;
+    } finally {
+      this.running--;
+      this.processQueue();
     }
   }
 
-  /**
-   * Gets the current number of running tasks
-   * @returns The number of currently executing tasks
-   */
+  private processQueue() {
+    while (this.running < this.maxConcurrent && this.head) {
+      const task = this.head;
+
+      this.head = this.head.next;
+      if (!this.head) {
+        this.tail = null;
+      }
+
+      this.size--;
+
+      queueMicrotask(() => {
+        this.runTask(task.executor, task.resolve, task.reject);
+      });
+    }
+  }
+
   get activeCount(): number {
     return this.running;
   }
 
-  /**
-   * Gets the number of tasks waiting in queue
-   * @returns The number of queued tasks
-   */
   get queuedCount(): number {
-    return this.queue.length;
+    return this.size;
   }
 }

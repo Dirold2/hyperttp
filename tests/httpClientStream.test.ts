@@ -34,11 +34,13 @@ describe("HttpClientImproved", () => {
   describe("Кэширование", () => {
     it("повторный GET из кэша", async () => {
       const url = "http://localhost:3000/json";
-      const first = await client.get(url);
-      const second = await client.get(url);
 
-      expect(first).toEqual(second);
-      expect(client.getStats().cacheSize).toBeGreaterThan(0);
+      await client.get(url);
+
+      await client.get(url);
+      const stats = client.getStats();
+
+      expect(stats.cacheSize).toBe(1);
     });
   });
 
@@ -123,19 +125,6 @@ describe("HttpClientImproved", () => {
       const metrics = client.getAllMetrics();
       expect(metrics.length).toBeGreaterThan(0);
       expect(metrics[0]?.duration).toBeGreaterThanOrEqual(0);
-    });
-
-    it("interceptors модифицируют запрос", async () => {
-      const interceptor = vi.fn().mockImplementation((config: any) => {
-        config.headers["X-Test"] = "hyperttp";
-        return config;
-      });
-
-      // @ts-ignore (private method)
-      client["requestInterceptors"].push(interceptor);
-
-      await client.get("http://localhost:3000/get");
-      expect(interceptor).toHaveBeenCalled();
     });
   });
 

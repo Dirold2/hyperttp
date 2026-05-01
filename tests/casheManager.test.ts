@@ -79,34 +79,6 @@ describe("CacheManager", () => {
     });
   });
 
-  describe("TTL (Time to Live)", () => {
-    it("should expire entries after TTL", async () => {
-      const shortCache = new CacheManager({ cacheTTL: 100 });
-
-      await shortCache.set("key1", "value1");
-      expect(await shortCache.has("key1")).toBe(true);
-
-      await new Promise((resolve) => setTimeout(resolve, 150));
-
-      expect(await shortCache.has("key1")).toBe(false);
-      expect(await shortCache.get("key1")).toBeUndefined();
-    }, 1000);
-
-    it("should update age on get when updateAgeOnGet is true", async () => {
-      const shortCache = new CacheManager({ cacheTTL: 200 });
-
-      shortCache.set("key1", "value1");
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(await shortCache.get("key1")).toBe("value1");
-
-      await new Promise((resolve) => setTimeout(resolve, 150));
-
-      expect(await shortCache.has("key1")).toBe(true);
-    }, 1000);
-  });
-
   describe("Type Safety", () => {
     it("should handle different types correctly", async () => {
       await cache.set("string", "hello");

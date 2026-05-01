@@ -18,6 +18,9 @@ export { QueueManager } from "./QueueManager.js";
 export { CacheManager } from "./CacheManager.js";
 export { RateLimiter } from "./RateLimiter.js";
 export { MetricsManager } from "./MetricsManager.js";
+export { InterceptorManager } from "./InterceptorManager.js";
+export { RequestExecutor } from "./RequestExecutor.js";
+export { ResponseTransformer } from "./ResponseTransformer.js";
 
 export {
   HttpClientError,
