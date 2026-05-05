@@ -27,6 +27,9 @@ export default class Request implements RequestInterface {
     private query;
     private bodyData;
     private signal?;
+    private method;
+    private bodyType;
+    private buildURL;
     constructor(config: RequestConfig);
     private normalizePath;
     setPath(path: string): this;
@@ -40,12 +43,16 @@ export default class Request implements RequestInterface {
     getQueryAsString(): string;
     getBodyData(): RequestBodyData;
     getBodyDataString(): string;
+    toFetchInit(): RequestInit;
     setBodyData(bodyData: RequestBodyData): this;
     addBodyData(bodyData: RequestBodyData): this;
-    getURI(): string;
+    setBodyType(type: "json" | "form"): this;
+    setMethod(method: string): this;
     getURL(): string;
     setSignal(signal: AbortSignal): this;
     getSignal(): AbortSignal | undefined;
+    clone(): Request;
+    withQuery(query: RequestQuery): Request;
 }
 /**
  * PreparedRequest is a wrapper around Request that parses a base URL and provides the same RequestInterface methods.
@@ -59,25 +66,7 @@ export default class Request implements RequestInterface {
  * console.log(prepReq.getURL()); // "https://api.example.com:443/v1/users?page=2"
  * ```
  */
-export declare class PreparedRequest implements RequestInterface {
-    private request;
+export declare class PreparedRequest extends Request {
     constructor(baseUrl: string);
-    setPath(path: string): this;
-    setHost(host: string): this;
-    getHeaders(): RequestHeaders;
-    setHeaders(headers: RequestHeaders): this;
-    addHeaders(headers: RequestHeaders): this;
-    getQuery(): RequestQuery;
-    setQuery(query: RequestQuery): this;
-    addQuery(query: RequestQuery): this;
-    getQueryAsString(): string;
-    getBodyData(): RequestBodyData;
-    getBodyDataString(): string;
-    setBodyData(bodyData: RequestBodyData): this;
-    addBodyData(bodyData: RequestBodyData): this;
-    getURI(): string;
-    getURL(): string;
-    setSignal(signal: AbortSignal): RequestInterface;
-    getSignal(): AbortSignal | undefined;
 }
 //# sourceMappingURL=Request.d.ts.map

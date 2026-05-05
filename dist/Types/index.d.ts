@@ -61,6 +61,7 @@ export interface HttpClientOptions {
     enableQueue?: boolean;
     enableRateLimit?: boolean;
     enableCache?: boolean;
+    allowHttp2?: boolean;
 }
 export interface HttpClientInterface {
     get<T = any>(req: RequestInterface | string, responseType?: ResponseType): Promise<T>;

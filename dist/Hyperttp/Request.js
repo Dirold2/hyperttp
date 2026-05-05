@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PreparedRequest = void 0;
-const querystring_1 = require("querystring");
 /**
  * Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data.
  * Provides methods to build and manipulate the request.
@@ -30,10 +29,28 @@ class Request {
     query;
     bodyData;
     signal;
+    method = "GET";
+    bodyType = "json";
+    buildURL() {
+        const url = new URL(`${this.scheme}://${this.host}`);
+        url.port = this.port.toString();
+        url.pathname = this.path || "";
+        for (const [key, value] of Object.entries(this.query)) {
+            if (value == null)
+                continue;
+            if (Array.isArray(value)) {
+                value.forEach((v) => url.searchParams.append(key, String(v)));
+            }
+            else {
+                url.searchParams.set(key, String(value));
+            }
+        }
+        return url;
+    }
     constructor(config) {
         this.scheme = config.scheme;
         this.host = config.host;
-        this.port = config.port;
+        this.port = config.port ?? (config.scheme === "https" ? 443 : 80);
         this.path = config.path ?? "";
         this.headers = config.headers ?? {};
         this.query = config.query ?? {};
@@ -43,10 +60,12 @@ class Request {
     normalizePath(path) {
         if (!path)
             return "";
+        if (path === "/")
+            return "";
         return path.startsWith("/") ? path : `/${path}`;
     }
     setPath(path) {
-        this.path = path;
+        this.path = this.normalizePath(path);
         return this;
     }
     setHost(host) {
@@ -80,7 +99,7 @@ class Request {
         for (const [key, value] of Object.entries(this.query)) {
             if (value === undefined || value === null)
                 continue;
-            params.append(key, String(value));
+            params.set(key, String(value));
         }
         const qs = params.toString();
         return qs ? `?${qs}` : "";
@@ -89,7 +108,24 @@ class Request {
         return this.bodyData;
     }
     getBodyDataString() {
-        return (0, querystring_1.stringify)(this.bodyData);
+        if (this.bodyData == null)
+            return "";
+        if (typeof this.bodyData === "string") {
+            return this.bodyData;
+        }
+        if (this.bodyType === "form") {
+            return new URLSearchParams(this.bodyData).toString();
+        }
+        return JSON.stringify(this.bodyData);
+    }
+    toFetchInit() {
+        const body = this.getBodyDataString();
+        return {
+            method: this.method,
+            headers: this.headers,
+            body: body || undefined,
+            signal: this.signal,
+        };
     }
     setBodyData(bodyData) {
         this.bodyData = { ...bodyData };
@@ -99,19 +135,16 @@ class Request {
         this.bodyData = { ...this.bodyData, ...bodyData };
         return this;
     }
-    getURI() {
-        const path = this.normalizePath(this.path);
-        const portPart = this.port ? `:${this.port}` : "";
-        return `${this.scheme}://${this.host}${portPart}${path}`;
+    setBodyType(type) {
+        this.bodyType = type;
+        return this;
+    }
+    setMethod(method) {
+        this.method = method;
+        return this;
     }
     getURL() {
-        const base = new URL(this.getURI());
-        for (const [key, value] of Object.entries(this.query)) {
-            if (value === undefined || value === null)
-                continue;
-            base.searchParams.append(key, String(value));
-        }
-        return base.toString();
+        return this.buildURL().toString();
     }
     setSignal(signal) {
         this.signal = signal;
@@ -119,6 +152,38 @@ class Request {
     }
     getSignal() {
         return this.signal;
+    }
+    clone() {
+        const req = new Request({
+            scheme: this.scheme,
+            host: this.host,
+            port: this.port,
+            path: this.path || "",
+            headers: { ...this.headers },
+            query: { ...this.query },
+            bodyData: { ...this.bodyData },
+        })
+            .setMethod(this.method)
+            .setBodyType(this.bodyType);
+        if (this.signal)
+            req.setSignal(this.signal);
+        return req;
+    }
+    withQuery(query) {
+        const req = new Request({
+            scheme: this.scheme,
+            host: this.host,
+            port: this.port,
+            path: this.path,
+            headers: { ...this.headers },
+            query: { ...this.query, ...query },
+            bodyData: this.bodyData,
+        })
+            .setMethod(this.method)
+            .setBodyType(this.bodyType);
+        if (this.signal)
+            req.setSignal(this.signal);
+        return req;
     }
 }
 exports.default = Request;
@@ -134,82 +199,25 @@ exports.default = Request;
  * console.log(prepReq.getURL()); // "https://api.example.com:443/v1/users?page=2"
  * ```
  */
-class PreparedRequest {
-    request;
+class PreparedRequest extends Request {
     constructor(baseUrl) {
         const url = new URL(baseUrl);
-        const config = {
+        super({
             scheme: url.protocol.replace(":", ""),
             host: url.hostname,
-            port: url.port
-                ? parseInt(url.port, 10)
-                : url.protocol === "https:"
-                    ? 443
-                    : 80,
+            port: resolvePort(url),
             path: url.pathname === "/" ? "" : url.pathname,
             query: Object.fromEntries(url.searchParams.entries()),
-        };
-        this.request = new Request(config);
-    }
-    setPath(path) {
-        this.request.setPath(path);
-        return this;
-    }
-    setHost(host) {
-        this.request.setHost(host);
-        return this;
-    }
-    getHeaders() {
-        return this.request.getHeaders();
-    }
-    setHeaders(headers) {
-        this.request.setHeaders(headers);
-        return this;
-    }
-    addHeaders(headers) {
-        this.request.addHeaders(headers);
-        return this;
-    }
-    getQuery() {
-        return this.request.getQuery();
-    }
-    setQuery(query) {
-        this.request.setQuery(query);
-        return this;
-    }
-    addQuery(query) {
-        this.request.addQuery(query);
-        return this;
-    }
-    getQueryAsString() {
-        return this.request.getQueryAsString();
-    }
-    getBodyData() {
-        return this.request.getBodyData();
-    }
-    getBodyDataString() {
-        return this.request.getBodyDataString();
-    }
-    setBodyData(bodyData) {
-        this.request.setBodyData(bodyData);
-        return this;
-    }
-    addBodyData(bodyData) {
-        this.request.addBodyData(bodyData);
-        return this;
-    }
-    getURI() {
-        return this.request.getURI();
-    }
-    getURL() {
-        return this.request.getURL();
-    }
-    setSignal(signal) {
-        return this.request.setSignal(signal);
-    }
-    getSignal() {
-        return this.request.getSignal();
+        });
     }
 }
 exports.PreparedRequest = PreparedRequest;
+function resolvePort(url) {
+    if (url.port !== "") {
+        const n = Number(url.port);
+        if (!Number.isNaN(n))
+            return n;
+    }
+    return url.protocol === "https:" ? 443 : 80;
+}
 //# sourceMappingURL=Request.js.map
