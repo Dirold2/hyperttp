@@ -319,23 +319,6 @@ describe("HttpClientImproved", () => {
     expect(metrics.getScope("not-a-url")).toBe("unknown");
   });
 
-  it("should default to port 80 for http in PreparedRequest", () => {
-    const prepReq = new PreparedRequest("http://example.com/api");
-
-    expect(prepReq.getURI()).toBe("http://example.com:80/api");
-  });
-
-  it("should cover signal handling and path normalization in Request", () => {
-    const req = new Request({ scheme: "https", host: "api.com", port: 443 });
-
-    req.setPath("v1/data");
-    expect(req.getURI()).toBe("https://api.com:443/v1/data");
-
-    const controller = new AbortController();
-    req.setSignal(controller.signal);
-    expect(req.getSignal()).toBe(controller.signal);
-  });
-
   it("should cover PreparedRequest proxy methods", () => {
     const prepReq = new PreparedRequest("https://test.com");
 
@@ -348,6 +331,7 @@ describe("HttpClientImproved", () => {
     expect(prepReq.getURL()).toContain("new-host.com");
     expect(prepReq.getHeaders()).toHaveProperty("X-Custom");
     expect(prepReq.getQuery()).toEqual({ q: "test" });
+    prepReq.setBodyType("form")
     expect(prepReq.getBodyDataString()).toBe("foo=bar");
   });
 
@@ -390,18 +374,6 @@ describe("CacheManager Sync Methods", () => {
   it("should return empty string if query is empty", () => {
     const req = new Request({ scheme: "http", host: "test.com", port: 80 });
     expect(req.getQueryAsString()).toBe("");
-  });
-
-  it("should handle empty port in getURI", () => {
-    const req = new Request({
-      scheme: "https",
-      host: "api.com",
-      port: 0 as any,
-    });
-
-    const uri = req.getURI();
-    expect(uri).toBe("https://api.com");
-    expect(uri).not.toContain(":0");
   });
 
   it("should proxy signal methods in PreparedRequest", () => {

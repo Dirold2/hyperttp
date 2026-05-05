@@ -81,6 +81,13 @@ export default class HttpClientImproved implements HttpClientInterface {
       connections: 1000,
       pipelining: 10,
       keepAliveTimeout: 60000,
+
+      connect: {
+        ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384',
+      },
+      
+      // @ts-ignore
+      allowH2: this.options.allowHttp2 ?? false,
     });
 
     this.executor = new RequestExecutor(this.agent, this.interceptors, {
@@ -482,6 +489,7 @@ export default class HttpClientImproved implements HttpClientInterface {
       enableCache: true,
       enableQueue: true,
       enableRateLimit: true,
+      allowHttp2: false,
       retryOptions: {
         maxRetries: 3,
         baseDelay: 1000,
@@ -524,16 +532,10 @@ export default class HttpClientImproved implements HttpClientInterface {
         }
         rawBody = params.toString();
       } else {
-        try {
-          rawBody = JSON.stringify(rawBody);
-          if (!headers["content-type"]) {
-            headers["content-type"] = "application/json; charset=utf-8";
-          }
-        } catch {
-          this.options.logger?.("error", `Serialization failed for ${method}`, {
-            url: req.getURL(),
-          });
-          rawBody = String(rawBody);
+        rawBody = JSON.stringify(rawBody);
+
+        if (!headers["content-type"]) {
+          headers["content-type"] = "application/json; charset=utf-8";
         }
       }
     }

@@ -92,6 +92,7 @@ export interface HttpClientOptions {
   enableQueue?: boolean;
   enableRateLimit?: boolean;
   enableCache?: boolean;
+  allowHttp2?: boolean;
 }
 
 export interface HttpClientInterface {

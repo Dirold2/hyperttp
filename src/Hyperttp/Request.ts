@@ -5,7 +5,6 @@ import type {
   RequestConfig,
   RequestInterface,
 } from "../Types/request";
-import { stringify } from "querystring";
 
 /**
  * Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data.
@@ -35,11 +34,31 @@ export default class Request implements RequestInterface {
   private query: RequestQuery;
   private bodyData: RequestBodyData;
   private signal?: AbortSignal;
+  private method: string = "GET";
+  private bodyType: "json" | "form" = "json";
+
+  private buildURL(): URL {
+    const url = new URL(`${this.scheme}://${this.host}`);
+
+    url.port = this.port.toString();
+    url.pathname = this.path || "";
+
+    for (const [key, value] of Object.entries(this.query)) {
+      if (value == null) continue;
+      if (Array.isArray(value)) {
+        value.forEach(v => url.searchParams.append(key, String(v)));
+      } else {
+        url.searchParams.set(key, String(value));
+      }
+    }
+
+    return url;
+  }
 
   constructor(config: RequestConfig) {
     this.scheme = config.scheme;
     this.host = config.host;
-    this.port = config.port;
+    this.port = config.port ?? (config.scheme === "https" ? 443 : 80);
     this.path = config.path ?? "";
     this.headers = config.headers ?? {};
     this.query = config.query ?? {};
@@ -49,11 +68,12 @@ export default class Request implements RequestInterface {
 
   private normalizePath(path: string): string {
     if (!path) return "";
+    if (path === "/") return "";
     return path.startsWith("/") ? path : `/${path}`;
   }
 
   setPath(path: string): this {
-    this.path = path;
+    this.path = this.normalizePath(path);
     return this;
   }
 
@@ -92,10 +112,12 @@ export default class Request implements RequestInterface {
 
   getQueryAsString(): string {
     const params = new URLSearchParams();
+
     for (const [key, value] of Object.entries(this.query)) {
       if (value === undefined || value === null) continue;
-      params.append(key, String(value));
+      params.set(key, String(value));
     }
+
     const qs = params.toString();
     return qs ? `?${qs}` : "";
   }
@@ -105,7 +127,28 @@ export default class Request implements RequestInterface {
   }
 
   getBodyDataString(): string {
-    return stringify(this.bodyData);
+    if (this.bodyData == null) return "";
+
+    if (typeof this.bodyData === "string") {
+      return this.bodyData;
+    }
+
+    if (this.bodyType === "form") {
+      return new URLSearchParams(this.bodyData as any).toString();
+    }
+
+    return JSON.stringify(this.bodyData);
+  }
+
+  toFetchInit(): RequestInit {
+    const body = this.getBodyDataString();
+
+    return {
+      method: this.method,
+      headers: this.headers,
+      body: body || undefined,
+      signal: this.signal,
+    };
   }
 
   setBodyData(bodyData: RequestBodyData): this {
@@ -118,19 +161,18 @@ export default class Request implements RequestInterface {
     return this;
   }
 
-  getURI(): string {
-    const path = this.normalizePath(this.path);
-    const portPart = this.port ? `:${this.port}` : "";
-    return `${this.scheme}://${this.host}${portPart}${path}`;
+  setBodyType(type: "json" | "form"): this {
+    this.bodyType = type;
+    return this;
+  }
+
+  setMethod(method: string): this {
+    this.method = method;
+    return this;
   }
 
   getURL(): string {
-    const base = new URL(this.getURI());
-    for (const [key, value] of Object.entries(this.query)) {
-      if (value === undefined || value === null) continue;
-      base.searchParams.append(key, String(value));
-    }
-    return base.toString();
+    return this.buildURL().toString();
   }
 
   setSignal(signal: AbortSignal): this {
@@ -140,6 +182,42 @@ export default class Request implements RequestInterface {
 
   getSignal(): AbortSignal | undefined {
     return this.signal;
+  }
+
+  clone(): Request {
+    const req = new Request({
+      scheme: this.scheme,
+      host: this.host,
+      port: this.port,
+      path: this.path || "",
+      headers: { ...this.headers },
+      query: { ...this.query },
+      bodyData: { ...this.bodyData },
+    })
+      .setMethod(this.method)
+      .setBodyType(this.bodyType);
+
+    if (this.signal) req.setSignal(this.signal);
+
+    return req;
+  }
+
+  withQuery(query: RequestQuery): Request {
+    const req = new Request({
+      scheme: this.scheme,
+      host: this.host,
+      port: this.port,
+      path: this.path,
+      headers: { ...this.headers },
+      query: { ...this.query, ...query },
+      bodyData: this.bodyData,
+    })
+      .setMethod(this.method)
+      .setBodyType(this.bodyType);
+
+    if (this.signal) req.setSignal(this.signal);
+
+    return req;
   }
 }
 
@@ -155,82 +233,25 @@ export default class Request implements RequestInterface {
  * console.log(prepReq.getURL()); // "https://api.example.com:443/v1/users?page=2"
  * ```
  */
-export class PreparedRequest implements RequestInterface {
-  private request: Request;
-
+export class PreparedRequest extends Request {
   constructor(baseUrl: string) {
     const url = new URL(baseUrl);
-    const config: RequestConfig = {
+
+    super({
       scheme: url.protocol.replace(":", ""),
       host: url.hostname,
-      port: url.port
-        ? parseInt(url.port, 10)
-        : url.protocol === "https:"
-          ? 443
-          : 80,
+      port: resolvePort(url),
       path: url.pathname === "/" ? "" : url.pathname,
       query: Object.fromEntries(url.searchParams.entries()),
-    };
-    this.request = new Request(config);
+    });
+  }
+}
+
+function resolvePort(url: URL): number {
+  if (url.port !== "") {
+    const n = Number(url.port);
+    if (!Number.isNaN(n)) return n;
   }
 
-  setPath(path: string): this {
-    this.request.setPath(path);
-    return this;
-  }
-  setHost(host: string): this {
-    this.request.setHost(host);
-    return this;
-  }
-  getHeaders(): RequestHeaders {
-    return this.request.getHeaders();
-  }
-  setHeaders(headers: RequestHeaders): this {
-    this.request.setHeaders(headers);
-    return this;
-  }
-  addHeaders(headers: RequestHeaders): this {
-    this.request.addHeaders(headers);
-    return this;
-  }
-  getQuery(): RequestQuery {
-    return this.request.getQuery();
-  }
-  setQuery(query: RequestQuery): this {
-    this.request.setQuery(query);
-    return this;
-  }
-  addQuery(query: RequestQuery): this {
-    this.request.addQuery(query);
-    return this;
-  }
-  getQueryAsString(): string {
-    return this.request.getQueryAsString();
-  }
-  getBodyData(): RequestBodyData {
-    return this.request.getBodyData();
-  }
-  getBodyDataString(): string {
-    return this.request.getBodyDataString();
-  }
-  setBodyData(bodyData: RequestBodyData): this {
-    this.request.setBodyData(bodyData);
-    return this;
-  }
-  addBodyData(bodyData: RequestBodyData): this {
-    this.request.addBodyData(bodyData);
-    return this;
-  }
-  getURI(): string {
-    return this.request.getURI();
-  }
-  getURL(): string {
-    return this.request.getURL();
-  }
-  setSignal(signal: AbortSignal): RequestInterface {
-    return this.request.setSignal(signal);
-  }
-  getSignal(): AbortSignal | undefined {
-    return this.request.getSignal();
-  }
+  return url.protocol === "https:" ? 443 : 80;
 }

@@ -8,7 +8,7 @@ export type RequestHeaders = Record<string, string>;
  */
 export type RequestQuery = Record<
   string,
-  string | number | boolean | undefined | null
+  string | string[] | number | boolean | undefined | null
 >;
 
 /**
@@ -22,7 +22,7 @@ export type RequestBodyData = any | null | undefined;
 export type RequestConfig = {
   scheme: string;
   host: string;
-  port: number;
+  port?: number;
   path?: string;
   headers?: RequestHeaders;
   query?: RequestQuery;
@@ -52,7 +52,6 @@ export interface RequestInterface {
   getBodyDataString?(): string;
   setBodyData?(bodyData: RequestBodyData): RequestInterface;
   addBodyData?(bodyData: RequestBodyData): RequestInterface;
-  getURI?(): string;
   setSignal?(signal: AbortSignal): RequestInterface;
   getSignal?(): AbortSignal | undefined;
 }
