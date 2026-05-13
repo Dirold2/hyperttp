@@ -1,13 +1,16 @@
 export {
-  HttpClientImproved,
-  RequestBuilder,
-  QueueManager,
   CacheManager,
+  HttpClientImproved,
+  InterceptorManager,
+  MetricsManager,
+  QueueManager,
   RateLimiter,
+  RequestBuilder,
+  RequestExecutor,
+  ResponseConverter,
   Request,
   PreparedRequest,
   UrlExtractor,
 } from "./Hyperttp/index.js";
 
 export type * from "./Types/index.js";
-export type * from "./Types/request.js";

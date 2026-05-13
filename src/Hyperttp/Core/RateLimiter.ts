@@ -1,38 +1,32 @@
-/**
- * @interface RateLimiterConfig
- * @en Configuration for the token bucket rate limiter.
- * @ru Конфигурация для ограничителя частоты запросов (алгоритм Token Bucket).
- */
-export interface RateLimiterConfig {
-  /** * @en Maximum number of requests allowed within the window.
-   * @ru Максимальное количество запросов, разрешенных в пределах окна.
-   * @default 100
-   */
-  maxRequests?: number;
-  /** * @en Time window in milliseconds.
-   * @ru Временное окно в миллисекундах.
-   * @default 60000 (1 minute)
-   */
-  windowMs?: number;
-}
+import type { RateLimitOptions } from "../../Types/options";
+
+type Waiter = {
+  tokensNeeded: number;
+  resolve: () => void;
+};
 
 /**
  * @class RateLimiter
- * @en Smooth rate limiting using the Token Bucket algorithm.
- * Allows for short bursts while maintaining a steady long-term rate.
- * @ru Плавное ограничение частоты запросов с использованием алгоритма Token Bucket.
- * Позволяет кратковременные всплески, сохраняя стабильную скорость в долгосрочной перспективе.
+ * @en Token bucket rate limiter with FIFO wait queue.
+ * @ru Rate limiter на основе token bucket с FIFO-очередью ожидания.
  */
 export class RateLimiter {
-  private tokens: number;
-  private lastRefill: number;
+  private readonly enabled: boolean;
   private readonly max: number;
   private readonly window: number;
   private readonly refillRate: number; // tokens per ms
 
-  constructor(config?: RateLimiterConfig) {
+  private tokens: number;
+  private lastRefill: number;
+
+  private waiters: Waiter[] = [];
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(config?: RateLimitOptions) {
+    this.enabled = config?.enabled ?? false;
     this.max = Math.max(1, config?.maxRequests ?? 100);
     this.window = Math.max(1, config?.windowMs ?? 60_000);
+
     this.refillRate = this.max / this.window;
     this.tokens = this.max;
     this.lastRefill = Date.now();
@@ -40,93 +34,164 @@ export class RateLimiter {
 
   /**
    * @en Waits until enough tokens are available and consumes them.
-   * @ru Ожидает появления достаточного количества токенов и потребляет их.
-   * @param tokensNeeded - Number of tokens to consume (default: 1)
+   * @ru Ждёт появления достаточного числа токенов и потребляет их.
    */
   async wait(tokensNeeded = 1): Promise<void> {
-    this.refill();
-    tokensNeeded = Math.max(1, tokensNeeded);
+    if (!this.enabled) return;
 
-    if (this.tokens >= tokensNeeded) {
+    tokensNeeded = Math.max(1, Math.floor(tokensNeeded));
+    if (tokensNeeded > this.max) {
+      tokensNeeded = this.max;
+    }
+
+    this.refill();
+
+    if (this.waiters.length === 0 && this.tokens >= tokensNeeded) {
       this.tokens -= tokensNeeded;
       return;
     }
 
-    const deficit = tokensNeeded - this.tokens;
-    const waitTimeMs = Math.ceil(deficit / this.refillRate);
-
-    // Приостанавливаем выполнение на расчетное время
-    await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
-
-    this.refill();
-    this.tokens -= tokensNeeded;
-    this.tokens = Math.max(0, this.tokens);
+    return new Promise<void>((resolve) => {
+      this.waiters.push({ tokensNeeded, resolve });
+      this.scheduleDrain();
+    });
   }
 
   /**
    * @en Attempts to consume tokens immediately.
    * @ru Пытается немедленно потребить токены.
-   * @returns true if tokens were consumed, false otherwise (limit exceeded).
    */
   tryConsume(tokensNeeded = 1): boolean {
+    if (!this.enabled) return true;
+
+    tokensNeeded = Math.max(1, Math.floor(tokensNeeded));
+    if (tokensNeeded > this.max) {
+      tokensNeeded = this.max;
+    }
+
     this.refill();
-    tokensNeeded = Math.max(1, tokensNeeded);
-    if (this.tokens >= tokensNeeded) {
+
+    if (this.waiters.length === 0 && this.tokens >= tokensNeeded) {
       this.tokens -= tokensNeeded;
       return true;
     }
+
     return false;
   }
 
   /**
    * @en Internal method to refill the bucket based on elapsed time.
-   * @ru Внутренний метод для пополнения корзины на основе прошедшего времени.
+   * @ru Внутренний метод пополнения корзины на основе прошедшего времени.
    */
   private refill(): void {
     const now = Date.now();
     const elapsedMs = now - this.lastRefill;
-    const newTokens = elapsedMs * this.refillRate;
 
-    this.tokens = Math.min(this.max, this.tokens + newTokens);
-    this.lastRefill = now;
+    if (elapsedMs <= 0) return;
+
+    const added = elapsedMs * this.refillRate;
+    if (added > 0) {
+      this.tokens = Math.min(this.max, this.tokens + added);
+      this.lastRefill = now;
+    }
+  }
+
+  /**
+   * @en Processes queued waiters in FIFO order.
+   * @ru Обрабатывает ожидающие запросы в FIFO-порядке.
+   */
+  private drainQueue(): void {
+    this.timer = null;
+    this.refill();
+
+    while (this.waiters.length > 0) {
+      const next = this.waiters[0];
+
+      if (this.tokens < next.tokensNeeded) {
+        break;
+      }
+
+      this.tokens -= next.tokensNeeded;
+      this.waiters.shift();
+      next.resolve();
+    }
+
+    if (this.waiters.length > 0) {
+      this.scheduleDrain();
+    }
+  }
+
+  /**
+   * @en Schedules the next queue drain based on the next token refill time.
+   * @ru Планирует следующий проход по очереди с учётом времени до следующего токена.
+   */
+  private scheduleDrain(): void {
+    if (this.timer || this.waiters.length === 0) return;
+
+    const first = this.waiters[0];
+    const needed = Math.max(0, first.tokensNeeded - this.tokens);
+
+    if (needed <= 0) {
+      queueMicrotask(() => this.drainQueue());
+      return;
+    }
+
+    const waitMs = Math.ceil(needed / this.refillRate);
+
+    this.timer = setTimeout(
+      () => {
+        this.drainQueue();
+      },
+      Math.max(1, waitMs),
+    );
+  }
+
+  /**
+   * @en Returns the number of currently available tokens.
+   * @ru Возвращает текущее число доступных токенов.
+   */
+  get remainingRequests(): number {
+    if (!this.enabled) return Number.POSITIVE_INFINITY;
+    this.refill();
+    return Math.max(0, Math.floor(this.tokens));
   }
 
   /**
    * @en Returns the number of currently "used" slots.
-   * @ru Возвращает количество текущих "занятых" слотов.
+   * @ru Возвращает число уже занятых слотов.
    */
   get currentCount(): number {
+    if (!this.enabled) return 0;
     this.refill();
-    return Math.floor(this.max - this.tokens);
-  }
-
-  /**
-   * @en Returns how many requests can be made right now.
-   * @ru Возвращает количество запросов, которые можно выполнить прямо сейчас.
-   */
-  get remainingRequests(): number {
-    this.refill();
-    return Math.floor(this.tokens);
+    return Math.max(0, Math.floor(this.max - this.tokens));
   }
 
   /**
    * @en Estimated time in ms until the next token is available.
-   * @ru Ожидаемое время в мс до появления следующего токена.
+   * @ru Оценка времени в мс до появления следующего токена.
    */
   get timeToReset(): number {
+    if (!this.enabled) return 0;
     this.refill();
+
     if (this.tokens >= 1) return 0;
 
-    const deficitToOne = 1 - this.tokens;
-    return Math.max(0, Math.ceil(deficitToOne / this.refillRate));
+    const deficit = 1 - this.tokens;
+    return Math.max(0, Math.ceil(deficit / this.refillRate));
   }
 
   /**
-   * @en Instantly refills the bucket to its maximum capacity.
-   * @ru Мгновенно пополняет корзину до максимальной емкости.
+   * @en Instantly refills the bucket to max capacity and clears waiting timers.
+   * @ru Мгновенно пополняет корзину до максимума и очищает таймеры ожидания.
    */
   reset(): void {
     this.tokens = this.max;
     this.lastRefill = Date.now();
+    this.waiters.length = 0;
+
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
   }
 }

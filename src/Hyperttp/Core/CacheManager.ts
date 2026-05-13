@@ -1,145 +1,127 @@
 import { LRUCache } from "lru-cache";
-
-/**
- * @interface CacheEntry
- */
-export interface CacheEntry<T> {
-  data: T;
-  etag?: string;
-  lastModified?: string;
-  timestamp: number;
-}
-
-/**
- * @interface CacheManagerOptions
- */
-export interface CacheManagerOptions {
-  cacheTTL?: number;
-  cacheMaxSize?: number;
-}
+import { CacheEntry, CacheManagerOptions } from "../../Types/cache";
 
 /**
  * @class CacheManager
+ * @en High-performance in-memory cache based on LRU strategy.
+ * Provides TTL support, metadata storage (etag, lastModified) and fast key-value access.
+ *
+ * @ru Высокопроизводительный in-memory кэш на основе LRU стратегии.
+ * Поддерживает TTL, хранение метаданных (etag, lastModified) и быстрый доступ по ключу.
  */
 export class CacheManager {
-  private cache: LRUCache<string, CacheEntry<unknown>>;
-  private ttl: number;
+  private readonly cache: LRUCache<string, CacheEntry<any>>;
 
   constructor(options?: CacheManagerOptions) {
-    this.ttl = options?.cacheTTL ?? 300_000;
     this.cache = new LRUCache({
       max: options?.cacheMaxSize ?? 500,
-      ttl: this.ttl,
+      ttl: options?.cacheTTL ?? 300_000,
       updateAgeOnGet: true,
     });
   }
 
   /**
-   * @en Retrieves data along with HTTP validation metadata.
+   * @en Retrieves cached value by key.
+   * @ru Получает значение из кэша по ключу.
+   *
+   * @template T
+   * @param key Cache key
+   * @returns Cached value or undefined if not found
    */
-  async getWithMetadata<T>(key: string): Promise<{
-    data: T;
-    etag?: string;
-    lastModified?: string;
-    isExpired: boolean;
-  } | null> {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-
-    const isExpired = Date.now() - entry.timestamp > this.ttl;
-
-    return {
-      data: entry.data as T,
-      etag: entry.etag,
-      lastModified: entry.lastModified,
-      isExpired,
-    };
+  get<T>(key: string): T | undefined {
+    return this.cache.get(key)?.data;
   }
 
   /**
-   * @en Stores data with optional ETag and Last-Modified headers.
+   * @en Stores value in cache.
+   * @ru Сохраняет значение в кэш.
+   *
+   * @template T
+   * @param key Cache key
+   * @param value Value to store
    */
-  async setWithMetadata<T>(
+  set<T>(key: string, value: T): void {
+    this.cache.set(key, {
+      data: value,
+    });
+  }
+
+  /**
+   * @en Retrieves cached entry with metadata (etag, lastModified).
+   * @ru Получает запись кэша вместе с метаданными (etag, lastModified).
+   *
+   * @template T
+   * @param key Cache key
+   * @returns Cached entry with metadata or undefined
+   */
+  getWithMetadata<T>(key: string):
+    | {
+        data: T;
+        etag?: string;
+        lastModified?: string;
+      }
+    | undefined {
+    return this.cache.get(key);
+  }
+
+  /**
+   * @en Stores value with optional HTTP metadata (etag, lastModified).
+   * @ru Сохраняет значение с дополнительными HTTP метаданными (etag, lastModified).
+   *
+   * @template T
+   * @param key Cache key
+   * @param data Value to store
+   * @param meta Optional HTTP metadata
+   */
+  setWithMetadata<T>(
     key: string,
     data: T,
-    meta: { etag?: unknown; lastModified?: unknown },
-  ): Promise<void> {
+    meta?: {
+      etag?: string;
+      lastModified?: string;
+    },
+  ): void {
     this.cache.set(key, {
       data,
-      etag: typeof meta.etag === "string" ? meta.etag : undefined,
-      lastModified:
-        typeof meta.lastModified === "string" ? meta.lastModified : undefined,
-      timestamp: Date.now(),
+      etag: meta?.etag,
+      lastModified: meta?.lastModified,
     });
   }
 
   /**
-   * @en Gets an item from cache.
+   * @en Checks if key exists in cache.
+   * @ru Проверяет наличие ключа в кэше.
+   *
+   * @param key Cache key
+   * @returns true if exists, otherwise false
    */
-  async get<T>(key: string): Promise<T | undefined> {
-    const entry = this.cache.get(key);
-    if (!entry) return undefined;
-    return entry.data as T;
-  }
-
-  /**
-   * @en Standard async set method.
-   */
-  async set<T>(key: string, value: T): Promise<void> {
-    this.cache.set(key, {
-      data: value,
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * @en Checks if key exists and is not expired.
-   */
-  async has(key: string): Promise<boolean> {
-    const entry = this.cache.get(key);
-    if (!entry) return false;
-
-    const isExpired = Date.now() - entry.timestamp > this.ttl;
-    if (isExpired) {
-      this.cache.delete(key);
-      return false;
-    }
-    return true;
-  }
-
-  async delete(key: string): Promise<boolean> {
-    return this.cache.delete(key);
-  }
-
-  async clear(): Promise<void> {
-    this.cache.clear();
-  }
-
-  // --- Synchronous Methods ---
-
-  getSync<T>(key: string): T | undefined {
-    return this.cache.get(key)?.data as T | undefined;
-  }
-
-  setSync<T>(key: string, value: T): void {
-    this.cache.set(key, {
-      data: value,
-      timestamp: Date.now(),
-    });
-  }
-
-  hasSync(key: string): boolean {
+  has(key: string): boolean {
     return this.cache.has(key);
   }
 
-  deleteSync(key: string): boolean {
+  /**
+   * @en Deletes value from cache by key.
+   * @ru Удаляет значение из кэша по ключу.
+   *
+   * @param key Cache key
+   * @returns true if value was removed
+   */
+  delete(key: string): boolean {
     return this.cache.delete(key);
   }
 
-  clearSync(): void {
+  /**
+   * @en Clears entire cache.
+   * @ru Очищает весь кэш.
+   */
+  clear(): void {
     this.cache.clear();
   }
 
+  /**
+   * @en Returns current cache size.
+   * @ru Возвращает текущий размер кэша.
+   */
   get size(): number {
     return this.cache.size;
   }

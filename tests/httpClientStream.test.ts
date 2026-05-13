@@ -84,11 +84,13 @@ describe("HttpClientImproved", () => {
     it("кидает ошибку на 404", async () => {
       const noRetryClient = new HttpClientImproved({
         verbose: false,
-        maxRetries: 0,
-        retryOptions: {
+        retry: {
+          maxRetries: 0,
           retryStatusCodes: [],
         },
-        validateStatus: (status) => status >= 200 && status < 300,
+        network: {
+          validateStatus: (status) => status >= 200 && status < 300,
+        },
       });
 
       try {
@@ -102,20 +104,21 @@ describe("HttpClientImproved", () => {
 
     it("timeout срабатывает", async () => {
       const timeoutClient = new HttpClientImproved({
-        timeout: 100,
-        maxRetries: 0,
-        retryOptions: {
+        network: {
+          timeout: 100,
+        },
+
+        retry: {
+          maxRetries: 0,
           retryStatusCodes: [],
         },
       });
 
-      try {
-        await timeoutClient.get("http://localhost:3000/delay/1");
+      await expect(
+        timeoutClient.get("http://localhost:3000/delay/1"),
+      ).rejects.toBeDefined();
 
-        expect(true).toBe(false);
-      } catch (error) {
-        expect(error).toBeDefined();
-      }
+      await timeoutClient.destroy();
     }, 2000);
   });
 

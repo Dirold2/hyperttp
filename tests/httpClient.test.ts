@@ -65,9 +65,15 @@ describe("HttpClientImproved", () => {
     mocks.mockRequest.mockResolvedValue(createMockResponse({ result: "ok" }));
 
     client = new HttpClientImproved({
-      maxRetries: 2,
-      cacheTTL: 5000,
-      enableQueue: true,
+      retry: {
+        maxRetries: 2,
+      },
+      cache: {
+        ttl: 5000,
+      },
+      queue: {
+        enabled: true,
+      },
     });
 
     vi.spyOn(client as any, "queue", "get").mockReturnValue({
@@ -101,7 +107,9 @@ describe("HttpClientImproved", () => {
     abortError.name = "AbortError";
     mocks.mockRequest.mockRejectedValue(abortError);
 
-    await expect(client.get("https://slow-api.com")).rejects.toThrow(/timeout/);
+    await expect(client.get("https://slow-api.com")).rejects.toThrow(
+      "Timeout after 30000ms",
+    );
   });
 
   it("should cover PUT, PATCH, DELETE methods", async () => {
@@ -331,7 +339,7 @@ describe("HttpClientImproved", () => {
     expect(prepReq.getURL()).toContain("new-host.com");
     expect(prepReq.getHeaders()).toHaveProperty("X-Custom");
     expect(prepReq.getQuery()).toEqual({ q: "test" });
-    prepReq.setBodyType("form")
+    prepReq.setBodyType("form");
     expect(prepReq.getBodyDataString()).toBe("foo=bar");
   });
 

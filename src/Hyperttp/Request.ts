@@ -46,7 +46,7 @@ export default class Request implements RequestInterface {
     for (const [key, value] of Object.entries(this.query)) {
       if (value == null) continue;
       if (Array.isArray(value)) {
-        value.forEach(v => url.searchParams.append(key, String(v)));
+        value.forEach((v) => url.searchParams.append(key, String(v)));
       } else {
         url.searchParams.set(key, String(value));
       }

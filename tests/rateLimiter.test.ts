@@ -3,7 +3,11 @@ import { RateLimiter } from "../src";
 
 describe("RateLimiter", () => {
   it("should wait if limit exceeded", async () => {
-    const limiter = new RateLimiter({ maxRequests: 2, windowMs: 100 });
+    const limiter = new RateLimiter({
+      enabled: true,
+      maxRequests: 2,
+      windowMs: 100,
+    });
     const times: number[] = [];
 
     const task = async () => {
@@ -22,7 +26,11 @@ describe("RateLimiter", () => {
   });
 
   it("should reset correctly", async () => {
-    const limiter = new RateLimiter({ maxRequests: 2, windowMs: 100 });
+    const limiter = new RateLimiter({
+      enabled: true,
+      maxRequests: 2,
+      windowMs: 100,
+    });
     await limiter.wait();
     await limiter.wait();
     expect(limiter.currentCount).toBe(2);
@@ -32,7 +40,11 @@ describe("RateLimiter", () => {
   });
 
   it("should naturally refill tokens over time", async () => {
-    const limiter = new RateLimiter({ maxRequests: 2, windowMs: 50 });
+    const limiter = new RateLimiter({
+      enabled: true,
+      maxRequests: 2,
+      windowMs: 50,
+    });
 
     limiter.tryConsume(2);
     expect(limiter.tryConsume(1)).toBe(false);
@@ -43,14 +55,18 @@ describe("RateLimiter", () => {
   });
 
   it("remainingRequests correct", async () => {
-    const limiter = new RateLimiter({ maxRequests: 5 });
+    const limiter = new RateLimiter({ enabled: true, maxRequests: 5 });
     await limiter.wait();
     await limiter.wait();
     expect(limiter.remainingRequests).toBe(3);
   });
 
   it("timeToReset accurate", async () => {
-    const limiter = new RateLimiter({ maxRequests: 2, windowMs: 1000 });
+    const limiter = new RateLimiter({
+      enabled: true,
+      maxRequests: 2,
+      windowMs: 1000,
+    });
 
     await limiter.wait();
     await limiter.wait();
@@ -63,7 +79,11 @@ describe("RateLimiter", () => {
 
   it("manual token consumption works", () => {
     vitest.useFakeTimers();
-    const limiter = new RateLimiter({ maxRequests: 10, windowMs: 1000 });
+    const limiter = new RateLimiter({
+      enabled: true,
+      maxRequests: 10,
+      windowMs: 1000,
+    });
 
     limiter.tryConsume(5);
 

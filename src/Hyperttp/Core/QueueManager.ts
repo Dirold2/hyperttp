@@ -1,72 +1,60 @@
-type QueueNode = {
-  executor: () => Promise<any>;
-  resolve: (v: any) => void;
-  reject: (e: any) => void;
-  next: QueueNode | null;
-};
+import { QueueNode } from "../../Types/queue";
 
 export class QueueManager {
   private running = 0;
-  private size = 0;
-
+  private queued = 0;
   private head: QueueNode | null = null;
   private tail: QueueNode | null = null;
 
-  constructor(private maxConcurrent = 50) {}
+  constructor(private readonly maxConcurrent = 50) {}
 
-  async enqueue<T>(executor: () => Promise<T>): Promise<T> {
-    if (this.running < this.maxConcurrent) {
-      return this.runTask(executor);
-    }
-
+  enqueue<T>(executor: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const newNode: QueueNode = { executor, resolve, reject, next: null };
+      const node: QueueNode = {
+        executor,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        next: null,
+      };
 
-      if (!this.tail) {
-        this.head = newNode;
-        this.tail = newNode;
+      if (this.tail) {
+        this.tail.next = node;
       } else {
-        this.tail.next = newNode;
-        this.tail = newNode;
+        this.head = node;
       }
-      this.size++;
+
+      this.tail = node;
+      this.queued++;
+      this.drain();
     });
   }
 
-  private async runTask<T>(
-    executor: () => Promise<T>,
-    resolve?: (v: T) => void,
-    reject?: (e: any) => void,
-  ): Promise<T> {
-    this.running++;
-    try {
-      const result = await executor();
-      resolve?.(result);
-      return result;
-    } catch (error) {
-      reject?.(error);
-      throw error;
-    } finally {
-      this.running--;
-      this.processQueue();
-    }
-  }
-
-  private processQueue() {
+  private drain(): void {
     while (this.running < this.maxConcurrent && this.head) {
       const task = this.head;
+      this.head = task.next;
 
-      this.head = this.head.next;
       if (!this.head) {
         this.tail = null;
       }
 
-      this.size--;
+      this.queued--;
+      this.running++;
 
-      queueMicrotask(() => {
-        this.runTask(task.executor, task.resolve, task.reject);
-      });
+      Promise.resolve()
+        .then(task.executor)
+        .then(task.resolve, task.reject)
+        .finally(() => {
+          this.running--;
+          this.drain();
+        });
     }
+  }
+
+  clear(): void {
+    this.head = null;
+    this.tail = null;
+    this.queued = 0;
   }
 
   get activeCount(): number {
@@ -74,6 +62,14 @@ export class QueueManager {
   }
 
   get queuedCount(): number {
-    return this.size;
+    return this.queued;
+  }
+
+  get pending(): number {
+    return this.running + this.queued;
+  }
+
+  get isIdle(): boolean {
+    return this.running === 0 && this.queued === 0;
   }
 }

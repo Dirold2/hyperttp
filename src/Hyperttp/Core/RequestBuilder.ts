@@ -1,4 +1,5 @@
-import { RequestInterface, ResponseType } from "../../Types";
+import { Method, ResponseType } from "../../Types/http";
+import { RequestInterface } from "../../Types/request";
 import HttpClientImproved from "./HttpClientImproved";
 
 /**
@@ -16,7 +17,7 @@ import HttpClientImproved from "./HttpClientImproved";
  */
 export class RequestBuilder<T = any> {
   private _url: string;
-  private _method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" = "GET";
+  private _method: Method | undefined;
   private _headers: Record<string, string> = {};
   private _body?: any;
   private _responseType: ResponseType = "auto";
@@ -99,6 +100,12 @@ export class RequestBuilder<T = any> {
     return this;
   }
 
+  /** @en Set method to OPTIONS */
+  options(): this {
+    this._method = "OPTIONS";
+    return this;
+  }
+
   /** @en Set response type to JSON */
   json(): this {
     this._responseType = "json";
@@ -152,7 +159,7 @@ export class RequestBuilder<T = any> {
    * @ru Финализирует и отправляет запрос.
    * @returns Promise resolving to the expected type T or StreamResponse.
    */
-  async send(): Promise<T> {
+  async send(): Promise<any> {
     const req: RequestInterface = {
       getURL: () => this._url,
       getBodyData: () => this._body,
@@ -161,7 +168,7 @@ export class RequestBuilder<T = any> {
     };
 
     if (this._responseType === "stream") {
-      return (await this._client.stream(req)) as any;
+      return this._client.stream(req);
     }
 
     switch (this._method) {
@@ -173,8 +180,10 @@ export class RequestBuilder<T = any> {
         return this._client.patch(req, this._body, this._responseType);
       case "DELETE":
         return this._client.delete(req, this._responseType);
+      case "OPTIONS":
+        this._client.options(req, this._body, this._responseType);
       case "HEAD":
-        return (await this._client.head(req)) as any;
+        return this._client.head(req);
       default:
         return this._client.get(req, this._responseType);
     }

@@ -11,7 +11,7 @@ describe("Request class", () => {
 
     req.setBodyData({ foo: "bar" });
     expect(req.getBodyData()).toEqual({ foo: "bar" });
-    req.setBodyType("form")
+    req.setBodyType("form");
     expect(req.getBodyDataString()).toBe("foo=bar");
 
     req.addBodyData({ baz: "qux" });
@@ -70,7 +70,7 @@ describe("PreparedRequest class", () => {
 
     prepReq.setBodyData({ test: "value" });
     expect(prepReq.getBodyData()).toEqual({ test: "value" });
-    prepReq.setBodyType("form")
+    prepReq.setBodyType("form");
     expect(prepReq.getBodyDataString()).toBe("test=value");
 
     prepReq.addBodyData({ another: "data" });

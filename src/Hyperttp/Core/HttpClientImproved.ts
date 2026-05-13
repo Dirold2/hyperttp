@@ -1,26 +1,22 @@
-import { Agent } from "undici";
 import { CookieAgent } from "http-cookie-agent/undici";
-
 import { CacheManager } from "./CacheManager.js";
 import { QueueManager } from "./QueueManager.js";
 import { RateLimiter } from "./RateLimiter.js";
 import { MetricsManager } from "./MetricsManager.js";
 import { RequestBuilder } from "./RequestBuilder.js";
 import { InterceptorManager } from "./InterceptorManager.js";
-import { ResponseTransformer } from "./ResponseTransformer.js";
 import { RequestExecutor } from "./RequestExecutor.js";
+import { ResponseConverter } from "./ResponseConverter.js";
+import { HttpClientInterface } from "../../Types/http-client.js";
+import { HttpClientOptions } from "../../Types/options.js";
+import { Method, ResponseType } from "../../Types/http.js";
+import { RequestInterface } from "../../Types/request.js";
+import { HttpClientError } from "../../Types/errors.js";
+import { RequestMetrics } from "../../Types/metrics.js";
+import { StreamResponse } from "../../Types/stream.js";
+import { Readable } from "node:stream";
 
-import type {
-  HttpClientInterface,
-  HttpClientOptions,
-  Method,
-  RequestInterface,
-  RequestMetrics,
-  ResponseType,
-  StreamResponse,
-} from "../../Types/index.js";
-
-import { HttpClientError } from "../../Types/index.js";
+const isProd = process.env.NODE_ENV === "production";
 
 /**
  * @class HttpClientImproved
@@ -28,8 +24,8 @@ import { HttpClientError } from "../../Types/index.js";
  * @ru Высокопроизводительный HTTP-клиент со встроенным кэшированием, очередями, лимитами и метриками.
  */
 export default class HttpClientImproved implements HttpClientInterface {
-  private agent: Agent;
-  private options: HttpClientOptions;
+  private agent: CookieAgent;
+  public readonly config: HttpClientOptions;
 
   private cache?: CacheManager;
   private queue?: QueueManager;
@@ -37,181 +33,100 @@ export default class HttpClientImproved implements HttpClientInterface {
   private metricsManager: MetricsManager;
 
   private interceptors: InterceptorManager;
-  private transformer: ResponseTransformer;
   private executor: RequestExecutor;
+  private converter: ResponseConverter;
 
-  /**
-   * @en Internal map to track active requests for deduplication and cancellation.
-   * @ru Внутренняя карта для отслеживания активных запросов (дедупликация и отмена).
-   */
   private inflight = new Map<
     string,
     { promise: Promise<any>; controller: AbortController }
   >();
+
   private defaultHeaders: Record<string, string> = {};
 
-  constructor(options?: HttpClientOptions) {
-    this.options = this.applyDefaultOptions(options);
+  private readonly cacheEnabled: boolean;
+  private readonly queueEnabled: boolean;
+  private readonly limiterEnabled: boolean;
+  private readonly metricsEnabled: boolean;
+  private readonly verboseEnabled: boolean;
+
+  constructor(config?: HttpClientOptions) {
+    this.config = this.applyDefaulthcoptions(config);
+
+    this.cacheEnabled = !!this.config.cache?.enabled;
+    this.queueEnabled = !!this.config.queue?.enabled;
+    this.limiterEnabled = !!this.config.rateLimit?.enabled;
+    this.metricsEnabled = this.config.metrics?.enabled ?? true;
+    this.verboseEnabled = !!this.config.verbose && !isProd;
 
     this.metricsManager = new MetricsManager({
-      maxHistory: this.options.maxMetricsSize,
+      maxHistory: this.config.metrics?.maxHistory,
     });
-    this.interceptors = new InterceptorManager();
-    this.transformer = new ResponseTransformer(
-      this.options.maxResponseBytes,
-      this.options.logger,
-    );
 
-    if (this.options.enableCache) {
+    this.converter = new ResponseConverter({
+      maxBodySize: this.config.responseConverter?.maxBodySize,
+      parseHTML: this.config.responseConverter?.parseHTML,
+      htmlMode: this.config.responseConverter?.htmlMode,
+      charset: this.config.responseConverter?.charset,
+    });
+
+    this.interceptors = new InterceptorManager();
+
+    if (this.cacheEnabled) {
       this.cache = new CacheManager({
-        cacheTTL: this.options.cacheTTL,
-        cacheMaxSize: this.options.cacheMaxSize,
+        cacheTTL: this.config.cache?.ttl,
+        cacheMaxSize: this.config.cache?.maxSize,
       });
     }
 
-    if (this.options.enableQueue) {
-      this.queue = new QueueManager(this.options.maxConcurrent ?? 500);
+    const concurrency =
+      this.config.network?.maxConcurrent === 0
+        ? Infinity
+        : (this.config.network?.maxConcurrent ?? 500);
+
+    if (this.queueEnabled) {
+      this.queue = new QueueManager(concurrency);
     }
 
-    if (this.options.enableRateLimit) {
-      this.limiter = new RateLimiter(this.options.rateLimit);
+    if (this.config.rateLimit?.enabled) {
+      this.limiter = new RateLimiter(this.config.rateLimit);
     }
 
     this.agent = new CookieAgent({
-      connections: 1000,
-      pipelining: 10,
-      keepAliveTimeout: 60000,
-
+      connections: concurrency,
+      pipelining: this.config.network?.pipelining ?? 10,
+      keepAliveTimeout: this.config.network?.keepAliveTimeout ?? 30000,
+      keepAliveMaxTimeout: this.config.network?.keepAliveTimeout ?? 30000,
       connect: {
-        ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384',
+        ciphers:
+          "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384",
+        rejectUnauthorized: !this.config.network?.rejectUnauthorized,
       },
-      
-      // @ts-ignore
-      allowH2: this.options.allowHttp2 ?? false,
+      allowH2: this.config.network?.allowHttp2 ?? true,
     });
 
     this.executor = new RequestExecutor(this.agent, this.interceptors, {
-      timeout: this.options.timeout!,
-      maxRetries: this.options.maxRetries!,
-      followRedirects: this.options.followRedirects!,
-      maxRedirects: this.options.maxRedirects!,
-      retryOptions: this.options.retryOptions as any,
-      verbose: this.options.verbose,
-      logger: this.options.logger,
+      timeout: this.config.network?.timeout ?? 30000,
+      maxRetries: this.config.retry?.maxRetries ?? 3,
+      followRedirects: this.config.network?.followRedirects ?? true,
+      maxRedirects: this.config.network?.maxRedirects ?? 5,
+      retryOptions: {
+        maxRetries: this.config.retry?.maxRetries ?? 3,
+        baseDelay: this.config.retry?.baseDelay ?? 1000,
+        maxDelay: this.config.retry?.maxDelay ?? 10000,
+        retryStatusCodes: this.config.retry?.retryStatusCodes ?? [
+          408, 429, 500, 502, 503, 504,
+        ],
+        jitter: this.config.retry?.jitter ?? true,
+      },
+      verbose: this.verboseEnabled,
+      logger: this.config.logger,
     });
 
     this.defaultHeaders = {
       Accept: "application/json, text/plain, */*",
       "Accept-Encoding": "gzip, deflate, br",
-      "User-Agent": this.options.userAgent!,
+      "User-Agent": this.config.network?.userAgent!,
     };
-  }
-
-  /**
-   * @en Core internal method for handling all HTTP requests.
-   * @ru Основной внутренний метод для обработки всех HTTP-запросов.
-   * @param method HTTP method (GET, POST, etc.)
-   * @param req Request object
-   * @param useCache Whether to use caching for this request
-   * @param responseType Expected response format
-   */
-  private async requestInternal<T = any>(
-    method: Method,
-    req: RequestInterface,
-    useCache = true,
-    responseType: ResponseType = "auto",
-  ): Promise<T> {
-    const url = req.getURL();
-
-    if (this.metricsManager.isCircuitOpen(url)) {
-      throw new HttpClientError(
-        `Circuit Breaker is OPEN`,
-        "CIRCUIT_OPEN",
-        503,
-        undefined,
-        url,
-        method,
-      );
-    }
-
-    if (this.limiter && this.options.enableRateLimit) {
-      await this.limiter.wait();
-    }
-
-    const { body, headers } = this.prepareRequestData(method, req);
-    const key =
-      method === "GET"
-        ? `GET:${url}`
-        : `${method}:${url}:${body ? JSON.stringify(body) : ""}`;
-
-    if (method === "GET" && useCache && this.cache) {
-      const cached = await this.cache.get<T>(key);
-      if (cached) return cached;
-    }
-
-    if (this.inflight.has(key)) return this.inflight.get(key)!.promise;
-
-    const internalController = new AbortController();
-    const userSignal = req.getSignal?.();
-    const abortHandler = () => internalController.abort();
-
-    if (userSignal) {
-      userSignal.addEventListener("abort", abortHandler, { once: true });
-    }
-
-    const executeAction = async (): Promise<T> => {
-      const metrics: RequestMetrics = this.createInitialMetrics(url, method);
-      try {
-        const rawResponse = await this.executor.execute(
-          method,
-          url,
-          headers,
-          body,
-          metrics,
-          internalController.signal,
-        );
-
-        const bufferBody = await this.transformer.readBodyWithLimit(
-          rawResponse.body,
-        );
-        this.metricsManager.recordBytes(bufferBody.length);
-        const parsed = await this.transformer.parseResponse(
-          { ...rawResponse, body: bufferBody },
-          responseType,
-        );
-
-        if (method === "HEAD")
-          return {
-            status: rawResponse.status,
-            headers: rawResponse.headers,
-          } as any;
-
-        if (
-          method === "GET" &&
-          useCache &&
-          this.cache &&
-          parsed !== undefined
-        ) {
-          this.cache.set(key, parsed);
-        }
-        this.recordSuccess(metrics, rawResponse.status);
-        return parsed as T;
-      } catch (error) {
-        this.recordError(metrics, error);
-        throw error;
-      } finally {
-        if (userSignal) userSignal.removeEventListener("abort", abortHandler);
-        this.inflight.delete(key);
-      }
-    };
-
-    const promise =
-      this.options.enableQueue && this.queue
-        ? this.queue.enqueue(() => executeAction())
-        : executeAction();
-
-    this.inflight.set(key, { promise, controller: internalController });
-    return promise;
   }
 
   /**
@@ -240,8 +155,12 @@ export default class HttpClientImproved implements HttpClientInterface {
     body?: any,
     responseType: ResponseType = "auto",
   ): Promise<T> {
-    const requestObj = this.normalizeRequest(req, body);
-    return this.requestInternal<T>("POST", requestObj, false, responseType);
+    return this.requestInternal<T>(
+      "POST",
+      this.normalizeRequest(req, body),
+      false,
+      responseType,
+    );
   }
 
   /**
@@ -253,8 +172,12 @@ export default class HttpClientImproved implements HttpClientInterface {
     body?: any,
     responseType: ResponseType = "auto",
   ): Promise<T> {
-    const requestObj = this.normalizeRequest(req, body);
-    return this.requestInternal<T>("PUT", requestObj, false, responseType);
+    return this.requestInternal<T>(
+      "PUT",
+      this.normalizeRequest(req, body),
+      false,
+      responseType,
+    );
   }
 
   /**
@@ -265,8 +188,12 @@ export default class HttpClientImproved implements HttpClientInterface {
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
   ): Promise<T> {
-    const requestObj = this.normalizeRequest(req);
-    return this.requestInternal<T>("DELETE", requestObj, false, responseType);
+    return this.requestInternal<T>(
+      "DELETE",
+      this.normalizeRequest(req),
+      false,
+      responseType,
+    );
   }
 
   /**
@@ -278,8 +205,117 @@ export default class HttpClientImproved implements HttpClientInterface {
     body?: any,
     responseType: ResponseType = "auto",
   ): Promise<T> {
-    const requestObj = this.normalizeRequest(req, body);
-    return this.requestInternal<T>("PATCH", requestObj, false, responseType);
+    return this.requestInternal<T>(
+      "PATCH",
+      this.normalizeRequest(req, body),
+      false,
+      responseType,
+    );
+  }
+
+  /**
+   * @en Performs an HTTP OPTIONS request.
+   * @ru Выполняет HTTP OPTIONS запрос.
+   */
+  options<T = any>(
+    req: RequestInterface | string,
+    body?: any,
+    responseType: ResponseType = "auto",
+  ): Promise<T> {
+    return this.requestInternal<T>(
+      "OPTIONS",
+      this.normalizeRequest(req, body),
+      false,
+      responseType,
+    );
+  }
+
+  /**
+   * @en Performs an HTTP HEAD request.
+   * @ru Выполняет HTTP HEAD запрос.
+   */
+  async head(
+    req: RequestInterface | string,
+  ): Promise<{ status: number; headers: Record<string, any> }> {
+    return this.requestInternal(
+      "HEAD",
+      this.normalizeRequest(req),
+      false,
+    ) as Promise<{
+      status: number;
+      headers: Record<string, any>;
+    }>;
+  }
+
+  /**
+   * @en Creates a new HttpClient instance with merged configuration.
+   * @ru Создаёт новый экземпляр HttpClient с объединённой конфигурацией.
+   *
+   * @param options Partial configuration to override current settings
+   * @returns New HttpClientImproved instance
+   */
+  extend(options: Partial<HttpClientOptions>): HttpClientImproved {
+    return new HttpClientImproved(this.mergeOptions(this.config, options));
+  }
+
+  /**
+   * @en Alias for extend(). Creates a new configured client instance.
+   * @ru Алиас для extend(). Создаёт новый настроенный экземпляр клиента.
+   *
+   * @param options Partial configuration overrides
+   * @returns New HttpClientImproved instance
+   */
+  create(options: Partial<HttpClientOptions>): HttpClientImproved {
+    return this.extend(options);
+  }
+
+  /**
+   * @en Executes a request and returns an AsyncIterable stream.
+   * @ru Выполняет запрос и возвращает итерируемый поток данных.
+   */
+  async stream(
+    req: RequestInterface | string,
+  ): Promise<StreamResponse<Readable>> {
+    const requestObj = this.normalizeRequest(req);
+
+    const url = requestObj.getURL();
+    const { body, headers } = this.prepareRequestData("GET", requestObj);
+
+    const controller = new AbortController();
+    const userSignal = requestObj.getSignal?.();
+
+    const signal = userSignal
+      ? AbortSignal.any([userSignal, controller.signal])
+      : controller.signal;
+
+    const rawResponse = await this.executor.execute(
+      "GET",
+      url,
+      headers,
+      body,
+      undefined,
+      signal,
+    );
+
+    const cleanup = () => {
+      this.inflight.delete(url);
+    };
+
+    rawResponse.body.once("close", cleanup);
+    rawResponse.body.once("error", cleanup);
+    rawResponse.body.once("end", cleanup);
+
+    this.inflight.set(url, {
+      promise: Promise.resolve(undefined),
+      controller,
+    });
+
+    return {
+      status: rawResponse.status,
+      headers: rawResponse.headers,
+      body: rawResponse.body,
+      url: rawResponse.url,
+    };
   }
 
   /**
@@ -291,116 +327,27 @@ export default class HttpClientImproved implements HttpClientInterface {
     return new RequestBuilder(url, this);
   }
 
-  /**
-   * @en Releases all resources, aborts active requests, and closes connections.
-   * @ru Освобождает ресурсы клиента, отменяет активные запросы и закрывает соединения.
-   */
   async destroy(): Promise<void> {
-    if (this.inflight.size > 0) {
-      if (this.options.verbose) {
-        this.options.logger?.(
-          "info",
-          `Aborting ${this.inflight.size} active requests...`,
-        );
-      }
-
-      for (const { controller } of this.inflight.values()) {
-        controller.abort();
-      }
-      this.inflight.clear();
+    for (const { controller } of this.inflight.values()) {
+      controller.abort();
     }
-
-    if (this.agent) {
-      try {
-        if (typeof (this.agent as any).destroy === "function") {
-          await (this.agent as any).destroy();
-        } else if (typeof (this.agent as any).close === "function") {
-          await (this.agent as any).close();
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-
-    if (this.cache) this.cache.clear();
-  }
-
-  /**
-   * @en Performs an HTTP HEAD request.
-   * @ru Выполняет HTTP HEAD запрос.
-   */
-  async head(
-    req: RequestInterface | string,
-  ): Promise<{ status: number; headers: Record<string, any> }> {
-    const requestObj = this.normalizeRequest(req);
-    return this.requestInternal("HEAD", requestObj, false) as Promise<{
-      status: number;
-      headers: Record<string, any>;
-    }>;
-  }
-
-  /**
-   * @en Executes a request and returns an AsyncIterable stream.
-   * @ru Выполняет запрос и возвращает итерируемый поток данных.
-   */
-  async stream(req: RequestInterface | string): Promise<StreamResponse> {
-    const requestObj = this.normalizeRequest(req);
-    const url = requestObj.getURL();
-    const { body, headers } = this.prepareRequestData("GET", requestObj);
-
-    const key = `STREAM:GET:${url}`;
-    const internalController = new AbortController();
-
-    const userSignal = requestObj.getSignal?.();
-    const abortHandler = () => internalController.abort();
-
-    if (userSignal) {
-      userSignal.addEventListener("abort", abortHandler, { once: true });
-    }
+    this.inflight.clear();
 
     try {
-      const rawResponse = await this.executor.execute(
-        "GET",
-        url,
-        headers,
-        body,
-        undefined,
-        internalController.signal,
-      );
-
-      this.inflight.set(key, {
-        promise: Promise.resolve(),
-        controller: internalController,
-      });
-
-      const cleanup = () => {
-        if (userSignal) userSignal.removeEventListener("abort", abortHandler);
-        this.inflight.delete(key);
-      };
-
-      rawResponse.body.on("close", cleanup);
-      rawResponse.body.on("error", cleanup);
-
-      return {
-        status: rawResponse.status,
-        headers: rawResponse.headers,
-        body: rawResponse.body,
-        url: rawResponse.url,
-      };
-    } catch (error) {
-      if (userSignal) userSignal.removeEventListener("abort", abortHandler);
-      throw error;
+      if (typeof (this.agent as any).destroy === "function") {
+        await (this.agent as any).destroy();
+      } else if (typeof (this.agent as any).close === "function") {
+        await (this.agent as any).close();
+      }
+    } catch {
+      /* ignore */
     }
+
+    this.cache?.clear();
   }
 
-  /**
-   * @en Clears the internal cache.
-   * @ru Полностью очищает внутренний кэш клиента.
-   */
   clearCache(): void {
-    if (this.cache) {
-      this.cache.clear();
-    }
+    this.cache?.clear();
   }
 
   /**
@@ -409,7 +356,6 @@ export default class HttpClientImproved implements HttpClientInterface {
    */
   clearMetrics(): void {
     this.metricsManager.clear();
-    this.options.logger?.("info", "Metrics cleared");
   }
 
   /**
@@ -433,32 +379,58 @@ export default class HttpClientImproved implements HttpClientInterface {
    * @ru Возвращает статистику состояния клиента в реальном времени.
    * @returns Cache size, active requests, queue state, etc.
    */
-  getStats(): {
-    cacheSize: number;
-    inflightRequests: number;
-    queuedRequests: number;
-    activeRequests: number;
-    currentRateLimit: number;
-  } {
+  getStats() {
     return {
       cacheSize: this.cache?.size ?? 0,
 
       inflightRequests: this.inflight.size,
 
       queuedRequests:
-        this.options.enableQueue && this.queue
+        this.queueEnabled && this.queue
           ? ((this.queue as any).queuedCount ?? 0)
           : 0,
 
       activeRequests:
-        this.options.enableQueue && this.queue
+        this.queueEnabled && this.queue
           ? ((this.queue as any).activeCount ?? 0)
           : 0,
 
       currentRateLimit:
-        this.options.enableRateLimit && this.limiter
+        this.limiterEnabled && this.limiter
           ? ((this.limiter as any).currentCount ?? 0)
           : 0,
+    };
+  }
+
+  async warmup(urls: string[], count = 10): Promise<void> {
+    const tasks: Promise<any>[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const url = urls[i % urls.length];
+
+      tasks.push(this.get(url, "text").catch(() => undefined));
+    }
+
+    await Promise.all(tasks);
+  }
+
+  private mergeOptions(
+    base: HttpClientOptions,
+    patch: Partial<HttpClientOptions>,
+  ): HttpClientOptions {
+    return {
+      ...base,
+      ...patch,
+      network: { ...base.network, ...patch.network },
+      retry: { ...base.retry, ...patch.retry },
+      cache: { ...base.cache, ...patch.cache },
+      rateLimit: { ...base.rateLimit, ...patch.rateLimit },
+      metrics: { ...base.metrics, ...patch.metrics },
+      queue: { ...base.queue, ...patch.queue },
+      responseConverter: {
+        ...base.responseConverter,
+        ...patch.responseConverter,
+      },
     };
   }
 
@@ -476,39 +448,225 @@ export default class HttpClientImproved implements HttpClientInterface {
     return req;
   }
 
-  private applyDefaultOptions(opt?: HttpClientOptions): HttpClientOptions {
-    const defaults: Partial<HttpClientOptions> = {
-      timeout: 30000,
-      maxRetries: 3,
-      followRedirects: true,
-      maxRedirects: 5,
-      userAgent: "Hyperttp/2.0",
-      maxResponseBytes: 10 * 1024 * 1024, // 10MB
-      cacheTTL: 1000 * 60 * 5,
-      cacheMaxSize: 500,
-      enableCache: true,
-      enableQueue: true,
-      enableRateLimit: true,
-      allowHttp2: false,
-      retryOptions: {
+  private applyDefaulthcoptions(opt?: HttpClientOptions): HttpClientOptions {
+    const defaults: HttpClientOptions = {
+      network: {
+        timeout: 30000,
+        maxRedirects: 5,
+        followRedirects: true,
+        maxResponseBytes: 10 * 1024 * 1024,
+        userAgent: "Hyperttp/2.0",
+        allowHttp2: true,
+        pipelining: 10,
+        keepAliveTimeout: 30000,
+        maxConcurrent: 0,
+        rejectUnauthorized: false,
+      },
+
+      cache: {
+        enabled: true,
+        ttl: 1000 * 60 * 5,
+        maxSize: 500,
+        methods: [],
+      },
+
+      retry: {
         maxRetries: 3,
         baseDelay: 1000,
         maxDelay: 10000,
         retryStatusCodes: [408, 429, 500, 502, 503, 504],
         jitter: true,
       },
+
+      rateLimit: {
+        enabled: false,
+        maxRequests: 100,
+        windowMs: 60000,
+      },
+
+      metrics: {
+        enabled: true,
+        maxHistory: 1000,
+      },
+
+      queue: {
+        enabled: true,
+      },
+
+      responseConverter: {
+        maxBodySize: 0,
+        parseHTML: false,
+        htmlMode: "simple",
+        charset: "utf-8",
+      },
     };
 
-    return { ...defaults, ...opt } as HttpClientOptions;
+    return {
+      ...defaults,
+      ...opt,
+      network: { ...defaults.network, ...opt?.network },
+      cache: { ...defaults.cache, ...opt?.cache },
+      retry: { ...defaults.retry, ...opt?.retry },
+      rateLimit: { ...defaults.rateLimit, ...opt?.rateLimit },
+      metrics: { ...defaults.metrics, ...opt?.metrics },
+      queue: { ...defaults.queue, ...opt?.queue },
+      responseConverter: {
+        ...defaults.responseConverter,
+        ...opt?.responseConverter,
+      },
+    };
+  }
+
+  /**
+   * @en Core internal method for handling all HTTP requests.
+   * @ru Основной внутренний метод для обработки всех HTTP-запросов.
+   * @param method HTTP method (GET, POST, etc.)
+   * @param req Request object
+   * @param useCache Whether to use caching for this request
+   * @param responseType Expected response format
+   */
+  private async requestInternal<T = any>(
+    method: Method,
+    req: RequestInterface,
+    useCache = true,
+    responseType: ResponseType = "auto",
+  ): Promise<T> {
+    const url = req.getURL();
+
+    if (this.metricsManager.isCircuitOpen(url)) {
+      throw new HttpClientError(
+        "Circuit Breaker is OPEN",
+        "CIRCUIT_OPEN",
+        503,
+        undefined,
+        url,
+        method,
+      );
+    }
+
+    if (this.limiter) {
+      await this.limiter.wait();
+    }
+
+    const userSignal = req.getSignal?.();
+    const { body, headers } = this.prepareRequestData(method, req);
+
+    const key =
+      method === "GET"
+        ? `GET:${url}`
+        : body !== undefined && body !== null
+          ? `${method}:${url}:${typeof body === "string" ? body : JSON.stringify(body)}`
+          : `${method}:${url}`;
+
+    if (this.cache && method === "GET" && useCache) {
+      const cached = this.cache.get<T>(key);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
+    const existing = this.inflight.get(key);
+    if (existing) {
+      return existing.promise;
+    }
+
+    const internalController = new AbortController();
+    const abortHandler = () => internalController.abort();
+
+    if (userSignal) {
+      userSignal.addEventListener("abort", abortHandler, { once: true });
+    }
+
+    const run = () =>
+      (async (): Promise<T> => {
+        let metrics: RequestMetrics | undefined;
+        const needMetrics = this.metricsEnabled;
+
+        if (needMetrics) {
+          metrics = this.createInitialMetrics(url, method);
+        }
+
+        try {
+          if (method === "HEAD") {
+            const rawResponse = await this.executor.execute(
+              method,
+              url,
+              headers,
+              body,
+              metrics,
+              internalController.signal,
+            );
+
+            if (needMetrics && metrics) {
+              this.recordSuccess(metrics, rawResponse.status);
+            }
+
+            return {
+              status: rawResponse.status,
+              headers: rawResponse.headers,
+            } as T;
+          }
+
+          const rawResponse = await this.executor.execute(
+            method,
+            url,
+            headers,
+            body,
+            metrics,
+            internalController.signal,
+          );
+
+          const bufferBody = await this.converter.readBody(rawResponse.body);
+
+          const parsed = await this.converter.convert(
+            bufferBody,
+            responseType,
+            {
+              contentType: rawResponse.headers["content-type"],
+              contentEncoding: rawResponse.headers["content-encoding"],
+              url: rawResponse.url,
+            },
+          );
+
+          if (
+            this.cache &&
+            method === "GET" &&
+            useCache &&
+            parsed !== undefined
+          ) {
+            this.cache.set(key, parsed);
+          }
+
+          if (needMetrics && metrics) {
+            this.recordSuccess(metrics, rawResponse.status);
+          }
+
+          return parsed as T;
+        } catch (error) {
+          if (needMetrics && metrics) {
+            this.recordError(metrics, error);
+          }
+          throw error;
+        } finally {
+          if (userSignal) {
+            userSignal.removeEventListener("abort", abortHandler);
+          }
+          this.inflight.delete(key);
+        }
+      })();
+
+    const promise =
+      this.queueEnabled && this.queue ? this.queue.enqueue(run) : run();
+
+    this.inflight.set(key, { promise, controller: internalController });
+    return promise;
   }
 
   private prepareRequestData(method: Method, req: RequestInterface) {
     const headers = { ...this.defaultHeaders, ...req.getHeaders() };
     let rawBody = req.getBodyData();
 
-    const methodsWithBody: Method[] = ["POST", "PUT", "PATCH", "DELETE"];
-
-    if (!methodsWithBody.includes(method)) {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
       return { body: undefined, headers };
     }
 
@@ -526,14 +684,14 @@ export default class HttpClientImproved implements HttpClientInterface {
       if (contentType.includes("application/x-www-form-urlencoded")) {
         const params = new URLSearchParams();
         for (const [key, value] of Object.entries(rawBody)) {
-          const finalValue =
-            typeof value === "object" ? JSON.stringify(value) : String(value);
-          params.append(key, finalValue);
+          params.append(
+            key,
+            typeof value === "object" ? JSON.stringify(value) : String(value),
+          );
         }
         rawBody = params.toString();
       } else {
         rawBody = JSON.stringify(rawBody);
-
         if (!headers["content-type"]) {
           headers["content-type"] = "application/json; charset=utf-8";
         }
@@ -566,8 +724,8 @@ export default class HttpClientImproved implements HttpClientInterface {
     metrics.statusCode = status;
     this.metricsManager.record(metrics);
 
-    if (this.options.verbose && this.options.logger) {
-      this.options.logger(
+    if (this.verboseEnabled) {
+      this.config.logger?.(
         "info",
         `Request successful: ${metrics.method} ${metrics.url}`,
         {
@@ -581,16 +739,16 @@ export default class HttpClientImproved implements HttpClientInterface {
   private recordError(metrics: RequestMetrics, error: any): void {
     metrics.endTime = Date.now();
     metrics.duration = metrics.endTime - metrics.startTime;
-    metrics.statusCode = error.statusCode || 0;
+    metrics.statusCode = error?.statusCode || 0;
     this.metricsManager.record(metrics);
 
-    if (this.options.verbose && this.options.logger) {
-      this.options.logger(
+    if (this.verboseEnabled) {
+      this.config.logger?.(
         "error",
         `Request failed: ${metrics.method} ${metrics.url}`,
         {
-          error: error.message,
-          code: error.code,
+          error: error?.message,
+          code: error?.code,
         },
       );
     }
