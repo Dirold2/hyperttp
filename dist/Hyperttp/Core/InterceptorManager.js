@@ -12,7 +12,7 @@ class InterceptorManager {
     /**
      * @en Adds a request interceptor to the chain.
      * @ru Добавляет перехватчик запроса в цепочку.
-     * @param interceptor - Function that modifies the request config.
+     * @param interceptor Function that modifies request config before execution.
      */
     addRequest(interceptor) {
         this.requestInterceptors.push(interceptor);
@@ -20,16 +20,16 @@ class InterceptorManager {
     /**
      * @en Adds a response interceptor to the chain.
      * @ru Добавляет перехватчик ответа в цепочку.
-     * @param interceptor - Function that modifies the response data.
+     * @param interceptor Function that modifies response after execution.
      */
     addResponse(interceptor) {
         this.responseInterceptors.push(interceptor);
     }
     /**
      * @en Sequentially applies all registered request interceptors.
-     * @ru Последовательно применяет все зарегистрированные перехватчики к конфигурации запроса.
-     * @param config - Current request configuration (url, method, headers, body).
-     * @returns Modified request configuration.
+     * @ru Последовательно применяет все перехватчики к конфигурации запроса.
+     * @param config Initial request configuration.
+     * @returns Modified request configuration after all interceptors.
      */
     async applyRequest(config) {
         let result = config;
@@ -40,9 +40,9 @@ class InterceptorManager {
     }
     /**
      * @en Sequentially applies all registered response interceptors.
-     * @ru Последовательно применяет все зарегистрированные перехватчики к полученному ответу.
-     * @param response - Raw response object (status, headers, body, url).
-     * @returns Modified response object.
+     * @ru Последовательно применяет все перехватчики к ответу.
+     * @param response Raw HTTP response object.
+     * @returns Modified response after all interceptors.
      */
     async applyResponse(response) {
         let result = response;
@@ -52,8 +52,8 @@ class InterceptorManager {
         return result;
     }
     /**
-     * @en Clears all registered interceptors.
-     * @ru Полностью очищает все зарегистрированные перехватчики.
+     * @en Removes all registered interceptors.
+     * @ru Очищает все зарегистрированные перехватчики.
      */
     clear() {
         this.requestInterceptors = [];

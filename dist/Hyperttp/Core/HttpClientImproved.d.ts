@@ -1,5 +1,11 @@
 import { RequestBuilder } from "./RequestBuilder.js";
-import type { HttpClientInterface, HttpClientOptions, RequestInterface, RequestMetrics, ResponseType, StreamResponse } from "../../Types/index.js";
+import { HttpClientInterface } from "../../Types/http-client.js";
+import { HttpClientOptions } from "../../Types/options.js";
+import { ResponseType } from "../../Types/http.js";
+import { RequestInterface } from "../../Types/request.js";
+import { RequestMetrics } from "../../Types/metrics.js";
+import { StreamResponse } from "../../Types/stream.js";
+import { Readable } from "node:stream";
 /**
  * @class HttpClientImproved
  * @en High-performance HTTP client with built-in caching, queuing, rate limiting, and metrics.
@@ -7,30 +13,22 @@ import type { HttpClientInterface, HttpClientOptions, RequestInterface, RequestM
  */
 export default class HttpClientImproved implements HttpClientInterface {
     private agent;
-    private options;
+    readonly config: HttpClientOptions;
     private cache?;
     private queue?;
     private limiter?;
     private metricsManager;
     private interceptors;
-    private transformer;
     private executor;
-    /**
-     * @en Internal map to track active requests for deduplication and cancellation.
-     * @ru Внутренняя карта для отслеживания активных запросов (дедупликация и отмена).
-     */
+    private converter;
     private inflight;
     private defaultHeaders;
-    constructor(options?: HttpClientOptions);
-    /**
-     * @en Core internal method for handling all HTTP requests.
-     * @ru Основной внутренний метод для обработки всех HTTP-запросов.
-     * @param method HTTP method (GET, POST, etc.)
-     * @param req Request object
-     * @param useCache Whether to use caching for this request
-     * @param responseType Expected response format
-     */
-    private requestInternal;
+    private readonly cacheEnabled;
+    private readonly queueEnabled;
+    private readonly limiterEnabled;
+    private readonly metricsEnabled;
+    private readonly verboseEnabled;
+    constructor(config?: HttpClientOptions);
     /**
      * @en Performs an HTTP GET request.
      * @ru Выполняет HTTP GET запрос.
@@ -62,16 +60,10 @@ export default class HttpClientImproved implements HttpClientInterface {
      */
     patch<T = any>(req: RequestInterface | string, body?: any, responseType?: ResponseType): Promise<T>;
     /**
-     * @en Creates a RequestBuilder for a fluent API approach.
-     * @ru Создает RequestBuilder для использования Fluent API.
-     * @example client.request('url').get().send();
+     * @en Performs an HTTP OPTIONS request.
+     * @ru Выполняет HTTP OPTIONS запрос.
      */
-    request<T = any>(url: string): RequestBuilder<T>;
-    /**
-     * @en Releases all resources, aborts active requests, and closes connections.
-     * @ru Освобождает ресурсы клиента, отменяет активные запросы и закрывает соединения.
-     */
-    destroy(): Promise<void>;
+    options<T = any>(req: RequestInterface | string, body?: any, responseType?: ResponseType): Promise<T>;
     /**
      * @en Performs an HTTP HEAD request.
      * @ru Выполняет HTTP HEAD запрос.
@@ -81,14 +73,33 @@ export default class HttpClientImproved implements HttpClientInterface {
         headers: Record<string, any>;
     }>;
     /**
+     * @en Creates a new HttpClient instance with merged configuration.
+     * @ru Создаёт новый экземпляр HttpClient с объединённой конфигурацией.
+     *
+     * @param options Partial configuration to override current settings
+     * @returns New HttpClientImproved instance
+     */
+    extend(options: Partial<HttpClientOptions>): HttpClientImproved;
+    /**
+     * @en Alias for extend(). Creates a new configured client instance.
+     * @ru Алиас для extend(). Создаёт новый настроенный экземпляр клиента.
+     *
+     * @param options Partial configuration overrides
+     * @returns New HttpClientImproved instance
+     */
+    create(options: Partial<HttpClientOptions>): HttpClientImproved;
+    /**
      * @en Executes a request and returns an AsyncIterable stream.
      * @ru Выполняет запрос и возвращает итерируемый поток данных.
      */
-    stream(req: RequestInterface | string): Promise<StreamResponse>;
+    stream(req: RequestInterface | string): Promise<StreamResponse<Readable>>;
     /**
-     * @en Clears the internal cache.
-     * @ru Полностью очищает внутренний кэш клиента.
+     * @en Creates a RequestBuilder for a fluent API approach.
+     * @ru Создает RequestBuilder для использования Fluent API.
+     * @example client.request('url').get().send();
      */
+    request<T = any>(url: string): RequestBuilder<T>;
+    destroy(): Promise<void>;
     clearCache(): void;
     /**
      * @en Clears all collected performance metrics.
@@ -113,12 +124,23 @@ export default class HttpClientImproved implements HttpClientInterface {
     getStats(): {
         cacheSize: number;
         inflightRequests: number;
-        queuedRequests: number;
-        activeRequests: number;
-        currentRateLimit: number;
+        queuedRequests: any;
+        activeRequests: any;
+        currentRateLimit: any;
     };
+    warmup(urls: string[], count?: number): Promise<void>;
+    private mergeOptions;
     private normalizeRequest;
-    private applyDefaultOptions;
+    private applyDefaulthcoptions;
+    /**
+     * @en Core internal method for handling all HTTP requests.
+     * @ru Основной внутренний метод для обработки всех HTTP-запросов.
+     * @param method HTTP method (GET, POST, etc.)
+     * @param req Request object
+     * @param useCache Whether to use caching for this request
+     * @param responseType Expected response format
+     */
+    private requestInternal;
     private prepareRequestData;
     private createInitialMetrics;
     private recordSuccess;

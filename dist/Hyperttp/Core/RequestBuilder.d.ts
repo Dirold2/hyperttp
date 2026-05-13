@@ -51,6 +51,8 @@ export declare class RequestBuilder<T = any> {
     delete(): this;
     /** @en Set method to HEAD */
     head(): this;
+    /** @en Set method to OPTIONS */
+    options(): this;
     /** @en Set response type to JSON */
     json(): this;
     /** @en Set response type to Plain Text */
@@ -76,6 +78,6 @@ export declare class RequestBuilder<T = any> {
      * @ru Финализирует и отправляет запрос.
      * @returns Promise resolving to the expected type T or StreamResponse.
      */
-    send(): Promise<T>;
+    send(): Promise<any>;
 }
 //# sourceMappingURL=RequestBuilder.d.ts.map

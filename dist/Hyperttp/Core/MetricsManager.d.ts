@@ -1,66 +1,51 @@
-import { RequestMetrics } from "../../Types";
-/**
- * @interface MetricsConfig
- * @en Configuration for the metrics and circuit breaker behavior.
- * @ru Конфигурация для метрик и поведения предохранителя (circuit breaker).
- */
-export interface MetricsConfig {
-    /** * @en Maximum number of entries in history.
-     * @ru Максимальное количество записей в истории. (default: 1000)
-     */
-    maxHistory?: number;
-    /** * @en Time to keep metrics in ms.
-     * @ru Время хранения метрик в миллисекундах. (default: 1 hour)
-     */
-    ttl?: number;
-}
-/**
- * @class MetricsManager
- * @en Collects request statistics and manages Circuit Breaker states for hosts.
- * @ru Собирает статистику запросов и управляет состояниями Circuit Breaker для хостов.
- */
+import type { RequestMetrics } from "../../Types/metrics";
+import { MetricsOptions } from "../../Types/options";
 export declare class MetricsManager {
-    private history;
-    private hostStates;
+    private readonly history;
+    private readonly hostStates;
+    private readonly scopeDepth;
     private readonly failureThreshold;
     private readonly resetTimeout;
+    private readonly slowRequestMs;
+    private readonly weights;
     private _totalBytesAccumulator;
-    constructor(config?: MetricsConfig);
+    constructor(config?: MetricsOptions);
     /**
-     * @en Extracts a scope (host + base path) from a URL for granular circuit breaking.
-     * @ru Извлекает область (хост + базовый путь) из URL для точечной работы предохранителя.
+     * @ru Извлекает scope (host + первый сегмент пути) для circuit breaker.
+     * @en Extracts scope (host + first path segment) for circuit breaker.
      */
     private getScope;
+    private getOrCreateState;
     /**
-     * @en Records request metrics and updates host failure state.
-     * @ru Записывает метрики запроса и обновляет состояние ошибок хоста.
+     * @ru Проверяет, открыт ли circuit breaker для URL.
+     * @en Checks whether the circuit breaker is open for a URL.
+     */
+    isCircuitOpen(url: string): boolean;
+    /**
+     * @ru Регистрирует метрику и обновляет состояние circuit breaker.
+     * @en Records request metrics and updates circuit breaker state.
      */
     record(metrics: RequestMetrics & {
         cacheHit?: boolean;
     }): void;
     /**
-     * @en Gets a specific metric record by its generated key.
-     * @ru Получает конкретную запись метрики по её сгенерированному ключу.
+     * @ru Получает метрику по ключу.
+     * @en Retrieves a metric entry by key.
      */
     get(key: string): RequestMetrics | undefined;
     /**
-     * @en Returns all metrics currently stored in history.
-     * @ru Возвращает все метрики, хранящиеся в истории.
+     * @ru Возвращает все метрики.
+     * @en Returns all stored metrics.
      */
     getAll(): RequestMetrics[];
     /**
-     * @en Checks if the circuit is open for a given URL (prevents request execution).
-     * @ru Проверяет, "разомкнута" ли цепь для данного URL (предотвращает выполнение запроса).
-     */
-    isCircuitOpen(url: string): boolean;
-    /**
+     * @ru Увеличивает счётчик полученных байтов.
      * @en Increments total received bytes counter.
-     * @ru Увеличивает счетчик общего объема полученных байтов.
      */
     recordBytes(bytes: number): void;
     /**
-     * @en Calculates performance summary statistics (Avg, P99, Success Rate).
-     * @ru Вычисляет сводную статистику производительности (Среднее, P99, % успеха).
+     * @ru Возвращает сводную статистику.
+     * @en Returns performance summary statistics.
      */
     getSummary(): {
         totalRequests: number;
@@ -70,11 +55,17 @@ export declare class MetricsManager {
         errorCount: number;
         maxDurationMs: number;
         p99DurationMs: number;
+        openCircuits: number;
     } | null;
     /**
-     * @en Clears metrics history and host failure states.
-     * @ru Очищает историю метрик и состояния ошибок хостов.
+     * @ru Очищает историю и состояния circuit breaker.
+     * @en Clears metrics history and circuit breaker states.
      */
     clear(): void;
+    private storeMetrics;
+    private updateCircuit;
+    private getFailureWeight;
+    private percentile;
+    private getOpenCircuitCount;
 }
 //# sourceMappingURL=MetricsManager.d.ts.map

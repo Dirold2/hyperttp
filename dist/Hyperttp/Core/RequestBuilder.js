@@ -16,7 +16,7 @@ exports.RequestBuilder = void 0;
  */
 class RequestBuilder {
     _url;
-    _method = "GET";
+    _method;
     _headers = {};
     _body;
     _responseType = "auto";
@@ -86,6 +86,11 @@ class RequestBuilder {
         this._method = "HEAD";
         return this;
     }
+    /** @en Set method to OPTIONS */
+    options() {
+        this._method = "OPTIONS";
+        return this;
+    }
     /** @en Set response type to JSON */
     json() {
         this._responseType = "json";
@@ -140,7 +145,7 @@ class RequestBuilder {
             getSignal: () => this._signal,
         };
         if (this._responseType === "stream") {
-            return (await this._client.stream(req));
+            return this._client.stream(req);
         }
         switch (this._method) {
             case "POST":
@@ -151,8 +156,10 @@ class RequestBuilder {
                 return this._client.patch(req, this._body, this._responseType);
             case "DELETE":
                 return this._client.delete(req, this._responseType);
+            case "OPTIONS":
+                this._client.options(req, this._body, this._responseType);
             case "HEAD":
-                return (await this._client.head(req));
+                return this._client.head(req);
             default:
                 return this._client.get(req, this._responseType);
         }

@@ -1,4 +1,4 @@
-import { RequestInterceptor, ResponseInterceptor } from "../../Types";
+import { RequestInterceptor, ResponseInterceptor } from "../../Types/interceptors";
 /**
  * @class InterceptorManager
  * @en Manages registration and sequential execution of request and response interceptors.
@@ -10,20 +10,20 @@ export declare class InterceptorManager {
     /**
      * @en Adds a request interceptor to the chain.
      * @ru Добавляет перехватчик запроса в цепочку.
-     * @param interceptor - Function that modifies the request config.
+     * @param interceptor Function that modifies request config before execution.
      */
     addRequest(interceptor: RequestInterceptor): void;
     /**
      * @en Adds a response interceptor to the chain.
      * @ru Добавляет перехватчик ответа в цепочку.
-     * @param interceptor - Function that modifies the response data.
+     * @param interceptor Function that modifies response after execution.
      */
     addResponse(interceptor: ResponseInterceptor): void;
     /**
      * @en Sequentially applies all registered request interceptors.
-     * @ru Последовательно применяет все зарегистрированные перехватчики к конфигурации запроса.
-     * @param config - Current request configuration (url, method, headers, body).
-     * @returns Modified request configuration.
+     * @ru Последовательно применяет все перехватчики к конфигурации запроса.
+     * @param config Initial request configuration.
+     * @returns Modified request configuration after all interceptors.
      */
     applyRequest(config: {
         url: string;
@@ -38,9 +38,9 @@ export declare class InterceptorManager {
     }>;
     /**
      * @en Sequentially applies all registered response interceptors.
-     * @ru Последовательно применяет все зарегистрированные перехватчики к полученному ответу.
-     * @param response - Raw response object (status, headers, body, url).
-     * @returns Modified response object.
+     * @ru Последовательно применяет все перехватчики к ответу.
+     * @param response Raw HTTP response object.
+     * @returns Modified response after all interceptors.
      */
     applyResponse(response: {
         status: number;
@@ -54,8 +54,8 @@ export declare class InterceptorManager {
         url: string;
     }>;
     /**
-     * @en Clears all registered interceptors.
-     * @ru Полностью очищает все зарегистрированные перехватчики.
+     * @en Removes all registered interceptors.
+     * @ru Очищает все зарегистрированные перехватчики.
      */
     clear(): void;
 }

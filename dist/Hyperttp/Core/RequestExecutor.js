@@ -2,158 +2,164 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RequestExecutor = void 0;
 const undici_1 = require("undici");
-const Types_1 = require("../../Types");
-/**
- * @class RequestExecutor
- * @en The core engine responsible for low-level HTTP execution, retries, and redirect logic.
- * @ru Основной движок, отвечающий за низкоуровневое выполнение HTTP-запросов, повторы и логику редиректов.
- */
+const errors_1 = require("../../Types/errors");
 class RequestExecutor {
     agent;
     interceptors;
     options;
+    redirectStatusCodes = new Set([301, 302, 303, 307, 308]);
     constructor(agent, interceptors, options) {
         this.agent = agent;
         this.interceptors = interceptors;
         this.options = options;
     }
-    /**
-     * @en Internal logger wrapper.
-     * @ru Внутренняя обертка для логирования.
-     */
-    log(level, msg, meta) {
-        if (this.options.verbose && this.options.logger) {
-            this.options.logger(level, msg, meta);
-        }
-    }
-    /**
-     * @en Calculates the delay before the next retry using Exponential Backoff and Jitter.
-     * @ru Вычисляет задержку перед следующим повтором, используя экспоненциальный рост и Jitter (джиттер).
-     */
     calcDelay(attempt) {
         const { baseDelay, maxDelay, jitter } = this.options.retryOptions;
         const base = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
-        // Jitter помогает избежать "эффекта стада", распределяя запросы во времени
         return jitter ? base * (0.75 + Math.random() * 0.5) : base;
     }
-    /** @en Simple async sleep helper. */
     sleep(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
-    /**
-     * @en Parses the 'Retry-After' header (can be seconds or a Date string).
-     * @ru Парсит заголовок 'Retry-After' (может быть в секундах или в формате даты).
-     */
-    parseRetryAfterMs(header) {
-        if (!header)
-            return undefined;
-        const raw = Array.isArray(header) ? header[0] : String(header);
-        const asSeconds = Number(raw);
-        if (Number.isFinite(asSeconds))
-            return Math.max(0, Math.floor(asSeconds * 1000));
-        const asDate = Date.parse(raw);
-        if (!Number.isNaN(asDate))
-            return Math.max(0, asDate - Date.now());
-        return undefined;
+    async drainBody(body) {
+        if (!body)
+            return;
+        try {
+            if (typeof body.dump === "function") {
+                await body.dump();
+                return;
+            }
+            if (typeof body.resume === "function") {
+                body.resume();
+                return;
+            }
+            if (typeof body.destroy === "function") {
+                body.destroy();
+            }
+        }
+        catch {
+            /* ignore */
+        }
     }
-    /**
-     * @en Executes an HTTP request with full retry and redirect lifecycle management.
-     * @ru Выполняет HTTP-запрос с полным циклом управления повторами и редиректами.
-     * @param method - HTTP method
-     * @param url - Destination URL
-     * @param headers - Request headers
-     * @param body - Request payload
-     * @param metrics - Performance metrics object to update
-     * @param signal - External AbortSignal for user cancellation
-     * @param redirects - Internal redirect counter
-     * @param attempt - Internal retry attempt counter
-     */
-    async execute(method, url, headers, body, metrics, signal, redirects = 0, attempt = 0) {
+    async executeCore(method, url, headers, body, metrics, signal, parser) {
+        let currentUrl = url;
+        let currentMethod = method;
+        let currentHeaders = headers;
+        let currentBody = body;
+        let redirects = 0;
+        let attempt = 0;
         const timeoutController = new AbortController();
         const timer = setTimeout(() => timeoutController.abort(), this.options.timeout);
         const abortHandler = () => timeoutController.abort();
         if (signal) {
             if (signal.aborted) {
                 clearTimeout(timer);
-                throw new Types_1.HttpClientError("Request aborted by user", "ABORTED", 0, undefined, url, method);
+                throw new errors_1.HttpClientError("Request aborted by user", "ABORTED", 0, undefined, url, method);
             }
-            signal.addEventListener("abort", abortHandler);
+            signal.addEventListener("abort", abortHandler, { once: true });
         }
         try {
-            const config = await this.interceptors.applyRequest({
-                url,
-                method,
-                headers,
-                body,
-            });
-            const res = await (0, undici_1.request)(config.url, {
-                method: config.method,
-                headers: config.headers,
-                body: config.body,
-                dispatcher: this.agent,
-                signal: timeoutController.signal,
-            });
-            clearTimeout(timer);
-            if (this.options.followRedirects &&
-                [301, 302, 303, 307, 308].includes(res.statusCode)) {
-                if (redirects >= this.options.maxRedirects) {
-                    throw new Types_1.HttpClientError("Too many redirects", "TOO_MANY_REDIRECTS", res.statusCode);
-                }
-                const location = res.headers.location;
-                if (location) {
-                    const nextUrl = new URL(location, config.url).toString();
-                    const nextMethod = res.statusCode === 303 ? "GET" : method;
-                    const nextHeaders = { ...headers };
-                    if (nextMethod === "GET") {
-                        delete nextHeaders["content-type"];
-                        delete nextHeaders["content-length"];
+            while (true) {
+                try {
+                    const config = await this.interceptors.applyRequest({
+                        url: currentUrl,
+                        method: currentMethod,
+                        headers: currentHeaders,
+                        body: currentBody,
+                    });
+                    const res = await (0, undici_1.request)(config.url, {
+                        method: config.method,
+                        headers: config.headers,
+                        body: config.body,
+                        dispatcher: this.agent,
+                        signal: timeoutController.signal,
+                    });
+                    const status = res.statusCode;
+                    const resHeaders = res.headers;
+                    if (this.options.followRedirects &&
+                        this.redirectStatusCodes.has(status)) {
+                        if (redirects >= this.options.maxRedirects) {
+                            await this.drainBody(res.body);
+                            throw new errors_1.HttpClientError("Too many redirects", "TOO_MANY_REDIRECTS", status);
+                        }
+                        const location = resHeaders.location;
+                        if (location) {
+                            await this.drainBody(res.body);
+                            const nextUrl = new URL(location, config.url).toString();
+                            const nextMethod = status === 303 ? "GET" : currentMethod;
+                            currentUrl = nextUrl;
+                            currentMethod = nextMethod;
+                            currentBody = nextMethod === "GET" ? undefined : currentBody;
+                            if (nextMethod === "GET") {
+                                if (currentHeaders["content-type"] ||
+                                    currentHeaders["Content-Type"] ||
+                                    currentHeaders["content-length"] ||
+                                    currentHeaders["Content-Length"]) {
+                                    const nextHeaders = { ...currentHeaders };
+                                    delete nextHeaders["content-type"];
+                                    delete nextHeaders["Content-Type"];
+                                    delete nextHeaders["content-length"];
+                                    delete nextHeaders["Content-Length"];
+                                    currentHeaders = nextHeaders;
+                                }
+                            }
+                            redirects++;
+                            continue;
+                        }
                     }
-                    return this.execute(nextMethod, nextUrl, nextHeaders, nextMethod === "GET" ? undefined : body, metrics, signal, redirects + 1);
-                }
-            }
-            if (this.options.retryOptions.retryStatusCodes.includes(res.statusCode)) {
-                if (attempt < this.options.maxRetries) {
-                    if (metrics) {
-                        metrics.retries += 1;
+                    if (status >= 500) {
+                        if (attempt < this.options.maxRetries) {
+                            if (metrics)
+                                metrics.retries += 1;
+                            await this.drainBody(res.body);
+                            const delay = this.calcDelay(attempt);
+                            if (delay > 0)
+                                await this.sleep(delay);
+                            attempt++;
+                            continue;
+                        }
+                        throw new errors_1.HttpClientError(`HTTP ${status}`, "HTTP_ERROR", status, undefined, config.url, currentMethod);
                     }
-                    let delay = this.calcDelay(attempt);
-                    if (res.statusCode === 429) {
-                        const retryAfter = this.parseRetryAfterMs(res.headers["retry-after"]);
-                        if (retryAfter !== undefined)
-                            delay = retryAfter;
+                    const transformed = await this.interceptors.applyResponse({
+                        status,
+                        headers: resHeaders,
+                        body: res.body,
+                        url: config.url,
+                    });
+                    const parsed = await parser(transformed);
+                    return {
+                        status: transformed.status,
+                        headers: transformed.headers,
+                        body: parsed,
+                        url: transformed.url,
+                    };
+                }
+                catch (err) {
+                    if (err?.name === "AbortError") {
+                        if (signal?.aborted) {
+                            throw new errors_1.HttpClientError("Request aborted by user", "ABORTED", 0, err, url, method);
+                        }
+                        throw new errors_1.TimeoutError(url, this.options.timeout);
                     }
-                    await this.sleep(delay);
-                    return this.execute(method, url, headers, body, metrics, signal, redirects, attempt + 1);
+                    if (attempt < this.options.maxRetries &&
+                        (err?.code === "ECONNREFUSED" || err?.code === "ETIMEDOUT")) {
+                        metrics && (metrics.retries += 1);
+                        await this.sleep(this.calcDelay(attempt));
+                        attempt++;
+                        continue;
+                    }
+                    throw err;
                 }
             }
-            return await this.interceptors.applyResponse({
-                status: res.statusCode,
-                headers: res.headers,
-                body: res.body,
-                url: config.url,
-            });
-        }
-        catch (err) {
-            clearTimeout(timer);
-            if (err.name === "AbortError") {
-                if (signal?.aborted)
-                    throw new Types_1.HttpClientError("Request aborted by user", "ABORTED", 0, err, url, method);
-                throw new Types_1.TimeoutError(url, this.options.timeout);
-            }
-            if (attempt < this.options.maxRetries &&
-                (err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT")) {
-                if (metrics) {
-                    metrics.retries += 1;
-                }
-                await this.sleep(this.calcDelay(attempt));
-                return this.execute(method, url, headers, body, metrics, signal, redirects, attempt + 1);
-            }
-            throw err;
         }
         finally {
+            clearTimeout(timer);
             if (signal)
                 signal.removeEventListener("abort", abortHandler);
         }
+    }
+    async execute(method, url, headers, body, metrics, signal) {
+        return this.executeCore(method, url, headers, body, metrics, signal, async (res) => res.body);
     }
 }
 exports.RequestExecutor = RequestExecutor;

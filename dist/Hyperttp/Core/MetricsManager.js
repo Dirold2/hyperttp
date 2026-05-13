@@ -2,16 +2,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MetricsManager = void 0;
 const lru_cache_1 = require("lru-cache");
-/**
- * @class MetricsManager
- * @en Collects request statistics and manages Circuit Breaker states for hosts.
- * @ru Собирает статистику запросов и управляет состояниями Circuit Breaker для хостов.
- */
 class MetricsManager {
     history;
     hostStates = new Map();
-    failureThreshold = 5;
-    resetTimeout = 30000;
+    scopeDepth;
+    failureThreshold;
+    resetTimeout;
+    slowRequestMs;
+    weights;
     _totalBytesAccumulator = 0;
     constructor(config) {
         this.history = new lru_cache_1.LRUCache({
@@ -19,85 +17,108 @@ class MetricsManager {
             ttl: config?.ttl ?? 1000 * 60 * 60,
             ttlAutopurge: true,
         });
+        this.scopeDepth = Math.max(1, config?.scopeDepth ?? 1);
+        this.failureThreshold = Math.max(1, config?.failureThreshold ?? 5);
+        this.resetTimeout = Math.max(1, config?.resetTimeout ?? 30_000);
+        this.slowRequestMs = Math.max(1, config?.slowRequestMs ?? 5_000);
+        this.weights = {
+            timeout: config?.weights?.timeout ?? 2,
+            serverError: config?.weights?.serverError ?? 1,
+            rateLimit: config?.weights?.rateLimit ?? 1.5,
+            slowRequest: config?.weights?.slowRequest ?? 0.5,
+            other: config?.weights?.other ?? 1,
+        };
     }
     /**
-     * @en Extracts a scope (host + base path) from a URL for granular circuit breaking.
-     * @ru Извлекает область (хост + базовый путь) из URL для точечной работы предохранителя.
+     * @ru Извлекает scope (host + первый сегмент пути) для circuit breaker.
+     * @en Extracts scope (host + first path segment) for circuit breaker.
      */
     getScope(url) {
         try {
             const u = new URL(url);
-            // Берём хост и первый сегмент пути, чтобы не блокировать весь домен из-за одной API-ручки
-            return `${u.host}${u.pathname.split("/").slice(0, 2).join("/")}`;
+            const segments = u.pathname.split("/").filter(Boolean);
+            const scopedPath = segments.slice(0, this.scopeDepth).join("/");
+            return scopedPath ? `${u.host}/${scopedPath}` : u.host;
         }
         catch {
             return "unknown";
         }
     }
-    /**
-     * @en Records request metrics and updates host failure state.
-     * @ru Записывает метрики запроса и обновляет состояние ошибок хоста.
-     */
-    record(metrics) {
-        const key = `${metrics.method}:${metrics.url}:${Date.now()}`;
-        this.history.set(key, metrics);
-        const host = this.getScope(metrics.url);
-        let state = this.hostStates.get(host);
+    getOrCreateState(scope) {
+        let state = this.hostStates.get(scope);
         if (!state) {
-            state = { consecutiveFailures: 0, lastFailureTime: 0 };
-            this.hostStates.set(host, state);
+            state = {
+                state: "CLOSED",
+                failureScore: 0,
+                consecutiveFailures: 0,
+                lastFailureTime: 0,
+                lastTransitionTime: Date.now(),
+                probeInFlight: false,
+            };
+            this.hostStates.set(scope, state);
         }
-        const isFailure = (metrics.statusCode && metrics.statusCode >= 500) ||
-            metrics.duration > 5000;
-        if (isFailure) {
-            state.consecutiveFailures++;
-            state.lastFailureTime = Date.now();
-        }
-        else {
-            state.consecutiveFailures = 0; // Сброс при успешном запросе (сценарий "Half-Open")
-        }
+        return state;
     }
     /**
-     * @en Gets a specific metric record by its generated key.
-     * @ru Получает конкретную запись метрики по её сгенерированному ключу.
+     * @ru Проверяет, открыт ли circuit breaker для URL.
+     * @en Checks whether the circuit breaker is open for a URL.
+     */
+    isCircuitOpen(url) {
+        const scope = this.getScope(url);
+        const state = this.getOrCreateState(scope);
+        if (state.state === "CLOSED") {
+            return false;
+        }
+        if (state.state === "OPEN") {
+            const elapsed = Date.now() - state.lastTransitionTime;
+            if (elapsed < this.resetTimeout) {
+                return true;
+            }
+            state.state = "HALF_OPEN";
+            state.probeInFlight = false;
+            state.lastTransitionTime = Date.now();
+        }
+        if (state.state === "HALF_OPEN") {
+            if (state.probeInFlight) {
+                return true;
+            }
+            state.probeInFlight = true;
+            return false;
+        }
+        return false;
+    }
+    /**
+     * @ru Регистрирует метрику и обновляет состояние circuit breaker.
+     * @en Records request metrics and updates circuit breaker state.
+     */
+    record(metrics) {
+        this.storeMetrics(metrics);
+        this.updateCircuit(metrics);
+    }
+    /**
+     * @ru Получает метрику по ключу.
+     * @en Retrieves a metric entry by key.
      */
     get(key) {
         return this.history.get(key);
     }
     /**
-     * @en Returns all metrics currently stored in history.
-     * @ru Возвращает все метрики, хранящиеся в истории.
+     * @ru Возвращает все метрики.
+     * @en Returns all stored metrics.
      */
     getAll() {
         return Array.from(this.history.values());
     }
     /**
-     * @en Checks if the circuit is open for a given URL (prevents request execution).
-     * @ru Проверяет, "разомкнута" ли цепь для данного URL (предотвращает выполнение запроса).
-     */
-    isCircuitOpen(url) {
-        const host = this.getScope(url);
-        const state = this.hostStates.get(host);
-        if (!state)
-            return false;
-        if (state.consecutiveFailures >= this.failureThreshold) {
-            const timeSinceLastFailure = Date.now() - state.lastFailureTime;
-            // Если таймаут прошел, даем шанс (Half-Open), если нет — цепь разомкнута (Open)
-            return timeSinceLastFailure < this.resetTimeout;
-        }
-        return false;
-    }
-    /**
+     * @ru Увеличивает счётчик полученных байтов.
      * @en Increments total received bytes counter.
-     * @ru Увеличивает счетчик общего объема полученных байтов.
      */
     recordBytes(bytes) {
-        // Мы можем хранить общее количество байтов отдельно для глобальной статистики
-        this._totalBytesAccumulator = (this._totalBytesAccumulator || 0) + bytes;
+        this._totalBytesAccumulator += Math.max(0, bytes);
     }
     /**
-     * @en Calculates performance summary statistics (Avg, P99, Success Rate).
-     * @ru Вычисляет сводную статистику производительности (Среднее, P99, % успеха).
+     * @ru Возвращает сводную статистику.
+     * @en Returns performance summary statistics.
      */
     getSummary() {
         const all = this.getAll();
@@ -108,14 +129,14 @@ class MetricsManager {
         let totalDuration = 0;
         let maxDur = 0;
         for (const m of all) {
-            if (m.statusCode && m.statusCode < 400)
+            if ((m.statusCode ?? 0) < 400 && (m.statusCode ?? 0) !== 0)
                 successful++;
             totalDuration += m.duration;
             if (m.duration > maxDur)
                 maxDur = m.duration;
         }
-        const durations = all.map((m) => m.duration).sort((a, b) => a - b);
-        const p99 = durations.length > 0 ? durations[Math.floor(durations.length * 0.99)] : 0;
+        const durations = all.map((m) => m.duration);
+        const p99 = this.percentile(durations, 99);
         return {
             totalRequests: total,
             successRate: (successful / total) * 100,
@@ -124,16 +145,84 @@ class MetricsManager {
             errorCount: total - successful,
             maxDurationMs: maxDur,
             p99DurationMs: p99,
+            openCircuits: this.getOpenCircuitCount(),
         };
     }
     /**
-     * @en Clears metrics history and host failure states.
-     * @ru Очищает историю метрик и состояния ошибок хостов.
+     * @ru Очищает историю и состояния circuit breaker.
+     * @en Clears metrics history and circuit breaker states.
      */
     clear() {
         this.history.clear();
         this.hostStates.clear();
         this._totalBytesAccumulator = 0;
+    }
+    storeMetrics(metrics) {
+        const key = `${metrics.method}:${metrics.url}:${Date.now()}`;
+        this.history.set(key, metrics);
+    }
+    updateCircuit(metrics) {
+        const scope = this.getScope(metrics.url);
+        const state = this.getOrCreateState(scope);
+        const failureWeight = this.getFailureWeight(metrics);
+        if (failureWeight > 0) {
+            state.failureScore += failureWeight;
+            state.consecutiveFailures += 1;
+            state.lastFailureTime = Date.now();
+            if (state.state === "HALF_OPEN" ||
+                state.failureScore >= this.failureThreshold) {
+                state.state = "OPEN";
+                state.probeInFlight = false;
+                state.lastTransitionTime = Date.now();
+            }
+            return;
+        }
+        state.failureScore = 0;
+        state.consecutiveFailures = 0;
+        if (state.state === "HALF_OPEN" || state.state === "OPEN") {
+            state.state = "CLOSED";
+            state.probeInFlight = false;
+            state.lastTransitionTime = Date.now();
+        }
+    }
+    getFailureWeight(metrics) {
+        const status = metrics.statusCode ?? 0;
+        if (status === 0) {
+            return this.weights.timeout;
+        }
+        if (status === 429) {
+            return this.weights.rateLimit;
+        }
+        if (status >= 500) {
+            return this.weights.serverError;
+        }
+        if (metrics.duration >= this.slowRequestMs) {
+            return this.weights.slowRequest;
+        }
+        if (status >= 400) {
+            return this.weights.other;
+        }
+        return 0;
+    }
+    percentile(arr, p) {
+        if (arr.length === 0)
+            return 0;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const rank = (p / 100) * (sorted.length - 1);
+        const low = Math.floor(rank);
+        const high = Math.ceil(rank);
+        if (low === high)
+            return sorted[low];
+        const weight = rank - low;
+        return Math.round(sorted[low] * (1 - weight) + sorted[high] * weight);
+    }
+    getOpenCircuitCount() {
+        let count = 0;
+        for (const state of this.hostStates.values()) {
+            if (state.state === "OPEN")
+                count++;
+        }
+        return count;
     }
 }
 exports.MetricsManager = MetricsManager;

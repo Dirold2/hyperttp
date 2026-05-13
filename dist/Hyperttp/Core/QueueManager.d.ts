@@ -1,14 +1,16 @@
 export declare class QueueManager {
-    private maxConcurrent;
+    private readonly maxConcurrent;
     private running;
-    private size;
+    private queued;
     private head;
     private tail;
     constructor(maxConcurrent?: number);
     enqueue<T>(executor: () => Promise<T>): Promise<T>;
-    private runTask;
-    private processQueue;
+    private drain;
+    clear(): void;
     get activeCount(): number;
     get queuedCount(): number;
+    get pending(): number;
+    get isIdle(): boolean;
 }
 //# sourceMappingURL=QueueManager.d.ts.map
