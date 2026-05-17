@@ -39,6 +39,22 @@ describe("RateLimiter", () => {
     expect(limiter.currentCount).toBe(0);
   });
 
+  it("should reject waiting promises on reset", async () => {
+    const limiter = new RateLimiter({
+      enabled: true,
+      maxRequests: 1,
+      windowMs: 1_000,
+    });
+
+    await limiter.wait();
+
+    const waiting = limiter.wait();
+    limiter.reset();
+
+    await expect(waiting).rejects.toThrow("Rate limiter has been reset");
+    expect(limiter.currentCount).toBe(0);
+  });
+
   it("should naturally refill tokens over time", async () => {
     const limiter = new RateLimiter({
       enabled: true,

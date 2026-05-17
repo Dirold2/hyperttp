@@ -99,7 +99,7 @@ export default class HttpClientImproved implements HttpClientInterface {
       connect: {
         ciphers:
           "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384",
-        rejectUnauthorized: !this.config.network?.rejectUnauthorized,
+        rejectUnauthorized: this.config.network?.rejectUnauthorized,
       },
       allowH2: this.config.network?.allowHttp2 ?? true,
     });
@@ -122,10 +122,14 @@ export default class HttpClientImproved implements HttpClientInterface {
       logger: this.config.logger,
     });
 
+    const useragent = this.config.network?.userAgent
+      ? this.config.network?.userAgent
+      : "Hyperttp/2.0";
+
     this.defaultHeaders = {
       Accept: "application/json, text/plain, */*",
       "Accept-Encoding": "gzip, deflate, br",
-      "User-Agent": this.config.network?.userAgent!,
+      "User-Agent": useragent,
     };
   }
 
@@ -323,11 +327,14 @@ export default class HttpClientImproved implements HttpClientInterface {
    * @ru Создает RequestBuilder для использования Fluent API.
    * @example client.request('url').get().send();
    */
-  request<T = any>(url: string): RequestBuilder<T> {
+  request(url: string): RequestBuilder {
     return new RequestBuilder(url, this);
   }
 
   async destroy(): Promise<void> {
+    this.queue?.clear();
+    this.limiter?.reset();
+
     for (const { controller } of this.inflight.values()) {
       controller.abort();
     }
@@ -532,6 +539,18 @@ export default class HttpClientImproved implements HttpClientInterface {
     responseType: ResponseType = "auto",
   ): Promise<T> {
     const url = req.getURL();
+    const userSignal = req.getSignal?.();
+
+    if (userSignal?.aborted) {
+      throw new HttpClientError(
+        "Request aborted by user",
+        "ABORTED",
+        0,
+        undefined,
+        url,
+        method,
+      );
+    }
 
     if (this.metricsManager.isCircuitOpen(url)) {
       throw new HttpClientError(
@@ -548,7 +567,6 @@ export default class HttpClientImproved implements HttpClientInterface {
       await this.limiter.wait();
     }
 
-    const userSignal = req.getSignal?.();
     const { body, headers } = this.prepareRequestData(method, req);
 
     const key =
@@ -559,7 +577,7 @@ export default class HttpClientImproved implements HttpClientInterface {
           : `${method}:${url}`;
 
     if (this.cache && method === "GET" && useCache) {
-      const cached = this.cache.get<T>(key);
+      const cached = await this.cache.get<T>(key);
       if (cached !== undefined) {
         return cached;
       }
@@ -659,6 +677,7 @@ export default class HttpClientImproved implements HttpClientInterface {
       this.queueEnabled && this.queue ? this.queue.enqueue(run) : run();
 
     this.inflight.set(key, { promise, controller: internalController });
+
     return promise;
   }
 

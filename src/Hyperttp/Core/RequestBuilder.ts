@@ -15,7 +15,7 @@ import HttpClientImproved from "./HttpClientImproved";
  * .send();
  * ```
  */
-export class RequestBuilder<T = any> {
+export class RequestBuilder {
   private _url: string;
   private _method: Method | undefined;
   private _headers: Record<string, string> = {};
@@ -181,7 +181,7 @@ export class RequestBuilder<T = any> {
       case "DELETE":
         return this._client.delete(req, this._responseType);
       case "OPTIONS":
-        this._client.options(req, this._body, this._responseType);
+        return this._client.options(req, this._body, this._responseType);
       case "HEAD":
         return this._client.head(req);
       default:

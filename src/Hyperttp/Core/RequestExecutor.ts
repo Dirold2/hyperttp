@@ -226,7 +226,7 @@ export class RequestExecutor {
             attempt < this.options.maxRetries &&
             (err?.code === "ECONNREFUSED" || err?.code === "ETIMEDOUT")
           ) {
-            metrics && (metrics.retries += 1);
+            if (metrics) metrics.retries += 1;
             await this.sleep(this.calcDelay(attempt));
             attempt++;
             continue;

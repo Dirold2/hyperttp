@@ -52,6 +52,14 @@ export class QueueManager {
   }
 
   clear(): void {
+    const error = new Error("Queue has been cleared");
+
+    while (this.head) {
+      const node = this.head;
+      this.head = node.next;
+      node.reject(error);
+    }
+
     this.head = null;
     this.tail = null;
     this.queued = 0;

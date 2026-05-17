@@ -7,6 +7,7 @@ export {
   RateLimiter,
   RequestBuilder,
   RequestExecutor,
+  RequestProfiler,
   ResponseConverter,
 } from "./Core/index.js";
 export { default as Request } from "./Request.js";

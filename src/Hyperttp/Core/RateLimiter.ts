@@ -3,6 +3,7 @@ import type { RateLimitOptions } from "../../Types/options";
 type Waiter = {
   tokensNeeded: number;
   resolve: () => void;
+  reject: (reason?: unknown) => void;
 };
 
 /**
@@ -51,8 +52,8 @@ export class RateLimiter {
       return;
     }
 
-    return new Promise<void>((resolve) => {
-      this.waiters.push({ tokensNeeded, resolve });
+    return new Promise<void>((resolve, reject) => {
+      this.waiters.push({ tokensNeeded, resolve, reject });
       this.scheduleDrain();
     });
   }
@@ -185,9 +186,15 @@ export class RateLimiter {
    * @ru Мгновенно пополняет корзину до максимума и очищает таймеры ожидания.
    */
   reset(): void {
+    const error = new Error("Rate limiter has been reset");
+
+    while (this.waiters.length > 0) {
+      const waiter = this.waiters.shift();
+      waiter?.reject(error);
+    }
+
     this.tokens = this.max;
     this.lastRefill = Date.now();
-    this.waiters.length = 0;
 
     if (this.timer) {
       clearTimeout(this.timer);

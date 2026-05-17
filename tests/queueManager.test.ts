@@ -43,4 +43,31 @@ describe("QueueManager", () => {
     expect(queue.activeCount).toBe(0);
     expect(queue.queuedCount).toBe(0);
   });
+
+  it("should reject queued tasks when clear is called", async () => {
+    const queue = new QueueManager(1);
+
+    let releaseFirst!: () => void;
+
+    const firstTask = queue.enqueue(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        }),
+    );
+
+    const queuedTask = queue.enqueue(async () => {
+      return "should-not-run";
+    });
+
+    expect(queue.activeCount).toBe(1);
+    expect(queue.queuedCount).toBe(1);
+
+    queue.clear();
+
+    await expect(queuedTask).rejects.toThrow("Queue has been cleared");
+
+    releaseFirst();
+    await firstTask;
+  });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { HttpClientImproved } from "../src/index.js";
 
-const JSON_API = "https://jsonplaceholder.typicode.com/posts/1";
+const JSON_API = "http://localhost:3000/json";
 const POST_API = "http://localhost:3000/post";
 const HTML_API = "http://localhost:3000/html";
 

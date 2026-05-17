@@ -39,6 +39,21 @@ function createMockBody(data: any) {
   };
 }
 
+function createRawMockBody(buffer: Buffer) {
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      yield buffer;
+    },
+    arrayBuffer: async () => {
+      const uint8 = new Uint8Array(buffer);
+      return uint8.buffer.slice(
+        uint8.byteOffset,
+        uint8.byteOffset + uint8.byteLength,
+      );
+    },
+  };
+}
+
 function createMockResponse(
   data: any,
   status = 200,
@@ -110,6 +125,16 @@ describe("HttpClientImproved", () => {
     await expect(client.get("https://slow-api.com")).rejects.toThrow(
       "Timeout after 30000ms",
     );
+  });
+
+  it("should fail fast when user signal is already aborted", async () => {
+    const req = new PreparedRequest("https://api.com/aborted");
+    const controller = new AbortController();
+    controller.abort();
+    req.setSignal(controller.signal);
+
+    await expect(client.get(req)).rejects.toThrow("Request aborted by user");
+    expect(mocks.mockRequest).not.toHaveBeenCalled();
   });
 
   it("should cover PUT, PATCH, DELETE methods", async () => {
@@ -198,6 +223,7 @@ describe("HttpClientImproved", () => {
     expect(stats).toHaveProperty("inflightRequests");
     expect(Array.isArray(allMetrics)).toBe(true);
     expect(allMetrics.length).toBeGreaterThan(0);
+    expect(specificMetric?.url).toBe(testUrl);
   });
 
   it("should cover CacheManager cleanup logic", async () => {
@@ -275,6 +301,21 @@ describe("HttpClientImproved", () => {
 
     const res = await client.get("https://api.com/bad-gzip");
     expect(typeof res).toBe("string");
+  });
+
+  it("should preserve binary payload in auto mode", async () => {
+    const binary = Buffer.from([0, 255, 10, 20, 30, 40]);
+
+    mocks.mockRequest.mockResolvedValueOnce({
+      statusCode: 200,
+      headers: { "content-type": "application/octet-stream" },
+      body: createRawMockBody(binary),
+    });
+
+    const res = await client.get("https://api.com/file.bin", "auto");
+
+    expect(Buffer.isBuffer(res)).toBe(true);
+    expect((res as Buffer).equals(binary)).toBe(true);
   });
 
   it("should deduplicate concurrent requests (lines 838-848)", async () => {

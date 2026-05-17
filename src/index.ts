@@ -7,6 +7,7 @@ export {
   RateLimiter,
   RequestBuilder,
   RequestExecutor,
+  RequestProfiler,
   ResponseConverter,
   Request,
   PreparedRequest,
