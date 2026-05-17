@@ -169,10 +169,13 @@ class ResponseConverter {
                 return this.toHtml(trimmed, sourceType);
             case "auto":
             default:
-                return this.toAuto(trimmed, sourceType, meta.url);
+                return this.toAuto(trimmed, sourceType, meta.url, body);
         }
     }
-    toAuto(text, sourceType, url) {
+    toAuto(text, sourceType, url, rawBody) {
+        if (sourceType === "buffer") {
+            return rawBody ?? Buffer.alloc(0);
+        }
         if (!text)
             return null;
         switch (sourceType) {
@@ -182,8 +185,6 @@ class ResponseConverter {
                 return this.xmlParser.parse(text);
             case "html":
                 return this.htmlToJson(text);
-            case "buffer":
-                return Buffer.from(text, "utf-8");
             case "text":
             default:
                 if (url &&

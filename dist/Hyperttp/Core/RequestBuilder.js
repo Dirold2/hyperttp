@@ -157,7 +157,7 @@ class RequestBuilder {
             case "DELETE":
                 return this._client.delete(req, this._responseType);
             case "OPTIONS":
-                this._client.options(req, this._body, this._responseType);
+                return this._client.options(req, this._body, this._responseType);
             case "HEAD":
                 return this._client.head(req);
             default:

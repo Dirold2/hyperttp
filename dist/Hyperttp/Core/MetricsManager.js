@@ -100,7 +100,24 @@ class MetricsManager {
      * @en Retrieves a metric entry by key.
      */
     get(key) {
-        return this.history.get(key);
+        const exact = this.history.get(key);
+        if (exact) {
+            return exact;
+        }
+        let latest;
+        let latestTs = -1;
+        for (const [entryKey, metric] of this.history.entries()) {
+            if (metric.url !== key) {
+                continue;
+            }
+            const idx = entryKey.lastIndexOf(":");
+            const ts = idx >= 0 ? Number(entryKey.slice(idx + 1)) : 0;
+            if (ts >= latestTs) {
+                latestTs = ts;
+                latest = metric;
+            }
+        }
+        return latest;
     }
     /**
      * @ru Возвращает все метрики.

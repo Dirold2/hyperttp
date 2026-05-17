@@ -20,6 +20,7 @@ export { QueueManager } from "./QueueManager.js";
 export { RateLimiter } from "./RateLimiter.js";
 export { RequestBuilder } from "./RequestBuilder.js";
 export { RequestExecutor } from "./RequestExecutor.js";
+export { RequestProfiler } from "./RequestProfiler.js";
 export { ResponseConverter } from "./ResponseConverter.js";
 export * from "../../Types/index.js";
 export type * from "../../Types/index.js";

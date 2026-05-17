@@ -98,7 +98,7 @@ export default class HttpClientImproved implements HttpClientInterface {
      * @ru Создает RequestBuilder для использования Fluent API.
      * @example client.request('url').get().send();
      */
-    request<T = any>(url: string): RequestBuilder<T>;
+    request(url: string): RequestBuilder;
     destroy(): Promise<void>;
     clearCache(): void;
     /**

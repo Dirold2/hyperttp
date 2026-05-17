@@ -25,7 +25,7 @@ export interface HttpClientInterface {
     options<T = unknown>(req: RequestInterface | string, body?: any, responseType?: ResponseType): Promise<T>;
     head(req: RequestInterface | string): Promise<HeadResponse>;
     stream(req: RequestInterface | string): Promise<StreamResponse>;
-    request<T = unknown>(url: string): RequestBuilder<T>;
+    request(url: string): RequestBuilder;
     create(options: Partial<HttpClientOptions>): HttpClientInterface;
     extend(options: Partial<HttpClientOptions>): HttpClientInterface;
     warmup(urls: string[], count?: number): Promise<void>;

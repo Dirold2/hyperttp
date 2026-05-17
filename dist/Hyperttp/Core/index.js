@@ -17,7 +17,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ResponseConverter = exports.RequestExecutor = exports.RequestBuilder = exports.RateLimiter = exports.QueueManager = exports.MetricsManager = exports.InterceptorManager = exports.HttpClientImproved = exports.CacheManager = void 0;
+exports.ResponseConverter = exports.RequestProfiler = exports.RequestExecutor = exports.RequestBuilder = exports.RateLimiter = exports.QueueManager = exports.MetricsManager = exports.InterceptorManager = exports.HttpClientImproved = exports.CacheManager = void 0;
 /**
  * HTTP Client Library
  *
@@ -48,6 +48,8 @@ var RequestBuilder_js_1 = require("./RequestBuilder.js");
 Object.defineProperty(exports, "RequestBuilder", { enumerable: true, get: function () { return RequestBuilder_js_1.RequestBuilder; } });
 var RequestExecutor_js_1 = require("./RequestExecutor.js");
 Object.defineProperty(exports, "RequestExecutor", { enumerable: true, get: function () { return RequestExecutor_js_1.RequestExecutor; } });
+var RequestProfiler_js_1 = require("./RequestProfiler.js");
+Object.defineProperty(exports, "RequestProfiler", { enumerable: true, get: function () { return RequestProfiler_js_1.RequestProfiler; } });
 var ResponseConverter_js_1 = require("./ResponseConverter.js");
 Object.defineProperty(exports, "ResponseConverter", { enumerable: true, get: function () { return ResponseConverter_js_1.ResponseConverter; } });
 __exportStar(require("../../Types/index.js"), exports);

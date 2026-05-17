@@ -12,7 +12,7 @@ import HttpClientImproved from "./HttpClientImproved";
  * .send();
  * ```
  */
-export declare class RequestBuilder<T = any> {
+export declare class RequestBuilder {
     private _url;
     private _method;
     private _headers;

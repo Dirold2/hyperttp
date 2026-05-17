@@ -64,4 +64,27 @@ export type CircuitState = {
     lastTransitionTime: number;
     probeInFlight: boolean;
 };
+export interface MemoryUsageSnapshot {
+    rss: number;
+    heapTotal: number;
+    heapUsed: number;
+    external: number;
+    arrayBuffers: number;
+}
+export interface RequestPerformanceProfile {
+    wallClockStart: number;
+    wallClockEnd: number;
+    durationMs: number;
+    cpu: {
+        userMs: number;
+        systemMs: number;
+        totalMs: number;
+        percent: number;
+    };
+    memory: {
+        before: MemoryUsageSnapshot;
+        after: MemoryUsageSnapshot;
+        delta: MemoryUsageSnapshot;
+    };
+}
 //# sourceMappingURL=metrics.d.ts.map

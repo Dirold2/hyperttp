@@ -72,7 +72,7 @@ class HttpClientImproved {
             keepAliveMaxTimeout: this.config.network?.keepAliveTimeout ?? 30000,
             connect: {
                 ciphers: "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384",
-                rejectUnauthorized: !this.config.network?.rejectUnauthorized,
+                rejectUnauthorized: this.config.network?.rejectUnauthorized,
             },
             allowH2: this.config.network?.allowHttp2 ?? true,
         });
@@ -93,10 +93,13 @@ class HttpClientImproved {
             verbose: this.verboseEnabled,
             logger: this.config.logger,
         });
+        const useragent = this.config.network?.userAgent
+            ? this.config.network?.userAgent
+            : "Hyperttp/2.0";
         this.defaultHeaders = {
             Accept: "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate, br",
-            "User-Agent": this.config.network?.userAgent,
+            "User-Agent": useragent,
         };
     }
     /**
@@ -214,6 +217,8 @@ class HttpClientImproved {
         return new RequestBuilder_js_1.RequestBuilder(url, this);
     }
     async destroy() {
+        this.queue?.clear();
+        this.limiter?.reset();
         for (const { controller } of this.inflight.values()) {
             controller.abort();
         }
@@ -380,13 +385,16 @@ class HttpClientImproved {
      */
     async requestInternal(method, req, useCache = true, responseType = "auto") {
         const url = req.getURL();
+        const userSignal = req.getSignal?.();
+        if (userSignal?.aborted) {
+            throw new errors_js_1.HttpClientError("Request aborted by user", "ABORTED", 0, undefined, url, method);
+        }
         if (this.metricsManager.isCircuitOpen(url)) {
             throw new errors_js_1.HttpClientError("Circuit Breaker is OPEN", "CIRCUIT_OPEN", 503, undefined, url, method);
         }
         if (this.limiter) {
             await this.limiter.wait();
         }
-        const userSignal = req.getSignal?.();
         const { body, headers } = this.prepareRequestData(method, req);
         const key = method === "GET"
             ? `GET:${url}`
@@ -394,7 +402,7 @@ class HttpClientImproved {
                 ? `${method}:${url}:${typeof body === "string" ? body : JSON.stringify(body)}`
                 : `${method}:${url}`;
         if (this.cache && method === "GET" && useCache) {
-            const cached = this.cache.get(key);
+            const cached = await this.cache.get(key);
             if (cached !== undefined) {
                 return cached;
             }
