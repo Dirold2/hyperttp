@@ -1,22 +1,9 @@
-export {
-  Request,
-  PreparedRequest,
-  UrlExtractor,
-  HyperClient,
-} from "./Hyperttp/index.js";
+import "./augmentations.js";
 
-export * from "./Types/index.js";
+export { HyperClient } from "./Hyperttp/index.js";
+export { Request, PreparedRequest, UrlExtractor } from "./Hyperttp/index.js";
+
 export type * from "./Types/index.js";
-
-import "@hyperttp/core";
-import "@hyperttp/serializer";
-import "@hyperttp/parser";
-import "@hyperttp/queue";
-import "@hyperttp/ratelimit";
-import "@hyperttp/inflight";
-import "@hyperttp/cache";
-import "@hyperttp/interceptors";
-import "@hyperttp/metrics";
 
 export * from "@hyperttp/core";
 export * from "@hyperttp/serializer";
