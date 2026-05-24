@@ -6,9 +6,9 @@ export {
 } from "./Hyperttp/index.js";
 
 export * from "./Types/index.js";
-
 export type * from "./Types/index.js";
 
+export * from "@hyperttp/core";
 export * from "@hyperttp/serializer";
 export * from "@hyperttp/parser";
 export * from "@hyperttp/queue";
