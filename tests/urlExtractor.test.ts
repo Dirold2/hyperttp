@@ -24,12 +24,12 @@ describe("UrlExtractor", () => {
     {
       entity: "playlist",
       regex:
-        /music\.yandex\.ru\/users\/(?<user>[\w\d\-_\.]+)\/playlists\/(?<id>\d+)/,
+        /music\.yandex\.ru\/users\/(?<user>[\w\d\-_.]+)\/playlists\/(?<id>\d+)/,
       groupNames: ["id", "user"],
     },
     {
       entity: "playlist",
-      regex: /music\.yandex\.ru\/playlists?\/(?<uid>(?:ar\.)?[A-Za-z0-9\-]+)/,
+      regex: /music\.yandex\.ru\/playlists?\/(?<uid>(?:ar\.)?[A-Za-z0-9-]+)/,
       groupNames: ["uid"],
     },
   ];

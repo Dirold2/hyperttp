@@ -1,7 +1,8 @@
 {
   "name": "hyperttp",
-  "version": "0.2.6",
+  "version": "3.0.1",
   "description": "A high-performance, universal HTTP client for Node.js with caching, retries, queueing, rate limiting, cookies and logging.",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "dirold2",
@@ -22,37 +23,52 @@
     "cookies",
     "logger"
   ],
+  "exports": {
+    "./*": {
+      "types": "./dist/Types/*.d.ts",
+      "import": "./dist/Types/*.js"
+    }
+  },
   "dependencies": {
-    "cheerio": "^1.2.0",
-    "fast-xml-builder": "^1.2.0",
-    "fast-xml-parser": "^5.8.0",
-    "http-cookie-agent": "^8.0.0",
-    "lru-cache": "^11.3.6",
-    "tough-cookie": "^6.0.1",
-    "undici": "^8.2.0"
+    "@hyperttp/core": "^1.1.7",
+    "@hyperttp/cache": "^1.0.13",
+    "@hyperttp/parser": "^1.0.18",
+    "@hyperttp/inflight": "^1.0.4",
+    "@hyperttp/interceptors": "^1.0.3",
+    "@hyperttp/metrics": "^1.0.3",
+    "@hyperttp/queue": "^1.0.3",
+    "@hyperttp/profiler": "^1.0.1",
+    "@hyperttp/serializer": "^1.0.4",
+    "@hyperttp/ratelimit": "^1.0.4",
+    "@hyperttp/retry": "^1.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^25.7.0",
-    "@vitest/coverage-v8": "^4.1.6",
-    "@vitest/ui": "4.1.6",
+    "@dirold2/dev-tools": "^1.0.12",
+    "@types/node": "^25.9.1",
+    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/ui": "4.1.7",
     "chalk": "5.6.2",
     "dotenv-cli": "^11.0.0",
-    "eslint": "^10.3.0",
+    "eslint": "^10.4.0",
     "globals": "^17.6.0",
     "prettier": "3.8.3",
     "jiti": "^2.7.0",
-    "tsx": "^4.21.0",
+    "tsx": "^4.22.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.3",
-    "vitest": "^4.1.6"
+    "typescript-eslint": "^8.59.4",
+    "vitest": "^4.1.7"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && d-build",
+    "dist": "d-dist",
+    "deploy": "npm run build && npm run dist",
+    "publish": "d-publish",
     "typecheck": "tsc --noEmit",
     "lint": "eslint 'src/**/*.{ts,js}'",
     "format": "prettier --write .",
     "test": "vitest run",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
   }
 }

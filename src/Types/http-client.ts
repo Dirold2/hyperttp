@@ -1,9 +1,11 @@
-import type { RequestInterface } from "./request.js";
-import type { ResponseType } from "./http.js";
-import type { StreamResponse } from "./stream.js";
-import type { RequestMetrics } from "./metrics.js";
-import type { HttpClientOptions } from "./options.js";
-import type { RequestBuilder } from "../Hyperttp/Core/RequestBuilder.js";
+import { RequestBuilder } from "../Hyperttp/Utils/RequestBuilder.js";
+import type {
+  HttpClientOptions,
+  RequestInterface,
+  RequestMetrics,
+  ResponseType,
+  StreamResponse,
+} from "@hyperttp/core";
 
 export interface HttpClientStats {
   cacheSize: number;

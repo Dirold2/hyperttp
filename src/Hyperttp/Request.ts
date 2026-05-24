@@ -1,10 +1,10 @@
 import type {
-  RequestHeaders,
-  RequestQuery,
   RequestBodyData,
   RequestConfig,
+  RequestHeaders,
   RequestInterface,
-} from "../Types/request";
+  RequestQuery,
+} from "@hyperttp/core";
 
 /**
  * Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data.

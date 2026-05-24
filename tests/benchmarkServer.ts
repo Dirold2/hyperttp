@@ -123,11 +123,7 @@ export function createBenchmarkServer() {
       });
 
       req.on("end", () => {
-        send(
-          res,
-          `ok method=${method} body=${body}`,
-          "text/plain",
-        );
+        send(res, `ok method=${method} body=${body}`, "text/plain");
       });
 
       return;
@@ -135,6 +131,15 @@ export function createBenchmarkServer() {
 
     if (pathname.startsWith("/status/")) {
       const code = Number(pathname.split("/")[2]) || 500;
+
+      if (code >= 300 && code < 400) {
+        res.writeHead(code, {
+          Location: "http://localhost:3000/json",
+          "Content-Type": "text/plain",
+        });
+        return res.end(`Redirecting to /json with status ${code}`);
+      }
+
       return json(res, { ok: code >= 200 && code < 300, status: code }, code);
     }
 

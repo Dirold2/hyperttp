@@ -1,5 +1,5 @@
+import { RequestProfiler } from "@hyperttp/profiler";
 import { describe, it, expect } from "vitest";
-import { RequestProfiler } from "../src";
 
 describe("RequestProfiler", () => {
   it("should profile latency, cpu and memory for async executor", async () => {

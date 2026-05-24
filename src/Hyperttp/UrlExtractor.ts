@@ -1,4 +1,4 @@
-import { UrlExtractorInterface, UrlPattern } from "../Types/url-extractor";
+import { UrlExtractorInterface, UrlPattern } from "../Types/url-extractor.js";
 
 /**
  * Universal URL Extractor

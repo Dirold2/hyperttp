@@ -1,5 +1,5 @@
+import { RateLimiter } from "@hyperttp/ratelimit";
 import { describe, it, expect, vitest } from "vitest";
-import { RateLimiter } from "../src";
 
 describe("RateLimiter", () => {
   it("should wait if limit exceeded", async () => {

@@ -1,5 +1,5 @@
+import { QueueManager } from "@hyperttp/queue";
 import { describe, it, expect } from "vitest";
-import { QueueManager } from "../src";
 
 describe("QueueManager", () => {
   it("should run tasks respecting concurrency limit", async () => {
@@ -25,6 +25,7 @@ describe("QueueManager", () => {
 
   it("should correctly count active and queued tasks", async () => {
     const queue = new QueueManager(1);
+
     const results: number[] = [];
 
     const task1 = queue.enqueue(async () => {

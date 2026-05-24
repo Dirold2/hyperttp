@@ -1,16 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { HttpClientImproved } from "../src/index.js";
+import { describe, it, expect, beforeEach } from "vitest";
+import { HyperClient } from "../src/index.js";
 
 const JSON_API = "http://localhost:3000/json";
 const POST_API = "http://localhost:3000/post";
 const HTML_API = "http://localhost:3000/html";
 
 describe("HttpClient Wrapper", () => {
-  let HttpClient: HttpClientImproved;
+  let HttpClient: HyperClient;
 
   beforeEach(() => {
-    HttpClient = new HttpClientImproved({
+    HttpClient = new HyperClient({
       verbose: true,
+      cache: { enabled: true },
     });
   });
 
@@ -24,7 +25,7 @@ describe("HttpClient Wrapper", () => {
     }, 10000);
 
     it("GET text returns string", async () => {
-      const result = await HttpClient.get(HTML_API, "text");
+      const result = await HttpClient.get<any>(HTML_API, "text");
 
       expect(typeof result).toBe("string");
       expect(result.length).toBeGreaterThan(10);
@@ -81,7 +82,7 @@ describe("HttpClient Wrapper", () => {
           .send();
 
         expect(result).toBeDefined();
-        expect(typeof result).toBe("string");
+        expect(typeof result).toBe("object");
       }, 10000);
 
       it("text responseType", async () => {

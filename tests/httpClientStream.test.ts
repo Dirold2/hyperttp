@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { HttpClientImproved, StreamResponse } from "../src";
+import { describe, it, expect, beforeEach } from "vitest";
+import { HyperClient } from "../src";
 
 describe("HttpClientImproved", () => {
-  let client: HttpClientImproved;
+  let client: HyperClient;
 
   beforeEach(() => {
-    client = new HttpClientImproved({ verbose: false });
+    client = new HyperClient({
+      verbose: false,
+      cache: { enabled: true },
+      metrics: { enabled: true },
+    });
   });
 
   describe("Core HTTP Methods", () => {
@@ -40,15 +44,13 @@ describe("HttpClientImproved", () => {
       await client.get(url);
       const stats = client.getStats();
 
-      expect(stats.cacheSize).toBe(1);
+      expect(stats?.cacheSize).toBe(1);
     });
   });
 
   describe("Streaming", () => {
     it("stream возвращает чанки", async () => {
-      const stream: StreamResponse = await client.stream(
-        "http://localhost:3000/stream/5",
-      );
+      const stream = await client.stream("http://localhost:3000/stream/5");
 
       expect(stream.status).toBe(200);
       expect(typeof stream.body[Symbol.asyncIterator]).toBe("function");
@@ -75,14 +77,14 @@ describe("HttpClientImproved", () => {
         .send();
 
       expect(response).toBeDefined();
-      expect(typeof response).toBe("string");
+      expect(typeof response).toBe("object");
       expect(response).not.toBeNull();
     }, 10000);
   });
 
   describe("Error Handling", () => {
     it("кидает ошибку на 404", async () => {
-      const noRetryClient = new HttpClientImproved({
+      const noRetryClient = new HyperClient({
         verbose: false,
         retry: {
           maxRetries: 0,
@@ -103,7 +105,7 @@ describe("HttpClientImproved", () => {
     }, 2000);
 
     it("timeout срабатывает", async () => {
-      const timeoutClient = new HttpClientImproved({
+      const timeoutClient = new HyperClient({
         network: {
           timeout: 100,
         },
@@ -118,7 +120,7 @@ describe("HttpClientImproved", () => {
         timeoutClient.get("http://localhost:3000/delay/1"),
       ).rejects.toBeDefined();
 
-      await timeoutClient.destroy();
+      timeoutClient.destroy();
     }, 2000);
   });
 
@@ -126,6 +128,8 @@ describe("HttpClientImproved", () => {
     it("собирает метрики", async () => {
       await client.get("http://localhost:3000/json");
       const metrics = client.getAllMetrics();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      console.log(metrics);
       expect(metrics.length).toBeGreaterThan(0);
       expect(metrics[0]?.duration).toBeGreaterThanOrEqual(0);
     });

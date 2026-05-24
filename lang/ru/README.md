@@ -56,53 +56,53 @@ import HttpClientImproved from "hyperttp";
 const client = new HttpClientImproved({
   // 🌐 Сетевые настройки
   network: {
-    timeout: 10000,                    // Таймаут запроса (мс)
-    maxConcurrent: 50,                 // Максимум одновременных запросов
-    maxRedirects: 5,                   // Максимум редиректов
-    followRedirects: true,             // Следовать редиректам
-    userAgent: "MyApp/1.0",            // User-Agent
-    allowHttp2: true,                  // Разрешить HTTP/2
-    pipelining: 10,                    // Конвейеризация запросов
-    keepAliveTimeout: 30000,           // Keep-alive таймаут
-    rejectUnauthorized: false,         // Проверка SSL сертификатов
+    timeout: 10000, // Таймаут запроса (мс)
+    maxConcurrent: 50, // Максимум одновременных запросов
+    maxRedirects: 5, // Максимум редиректов
+    followRedirects: true, // Следовать редиректам
+    userAgent: "MyApp/1.0", // User-Agent
+    allowHttp2: true, // Разрешить HTTP/2
+    pipelining: 10, // Конвейеризация запросов
+    keepAliveTimeout: 30000, // Keep-alive таймаут
+    rejectUnauthorized: false, // Проверка SSL сертификатов
   },
 
   // 💾 Кеширование (LRU cache)
   cache: {
-    enabled: true,                     // Включить кэш
-    ttl: 1000 * 60 * 5,                // Время жизни кэша (5 минут)
-    maxSize: 500,                      // Максимальный размер кэша (записей)
+    enabled: true, // Включить кэш
+    ttl: 1000 * 60 * 5, // Время жизни кэша (5 минут)
+    maxSize: 500, // Максимальный размер кэша (записей)
   },
 
   // 🚦 Ограничение скорости (Token Bucket)
   rateLimit: {
-    enabled: true,                     // Включить rate limiting
-    maxRequests: 100,                  // Максимум запросов
-    windowMs: 60000,                   // Окно времени (мс)
+    enabled: true, // Включить rate limiting
+    maxRequests: 100, // Максимум запросов
+    windowMs: 60000, // Окно времени (мс)
   },
 
   // 📊 Очередь запросов
   queue: {
-    enabled: true,                     // Включить очередь
+    enabled: true, // Включить очередь
   },
 
   // 🔄 Повторные попытки
   retry: {
-    maxRetries: 3,                     // Максимум попыток
-    baseDelay: 1000,                   // Базовая задержка (мс)
-    maxDelay: 10000,                   // Максимальная задержка (мс)
-    jitter: true,                      // Добавить случайность
+    maxRetries: 3, // Максимум попыток
+    baseDelay: 1000, // Базовая задержка (мс)
+    maxDelay: 10000, // Максимальная задержка (мс)
+    jitter: true, // Добавить случайность
     retryStatusCodes: [408, 429, 500, 502, 503, 504],
   },
 
   // 📈 Метрики
   metrics: {
-    enabled: true,                     // Сбор метрик
-    maxHistory: 1000,                  // История метрик
+    enabled: true, // Сбор метрик
+    maxHistory: 1000, // История метрик
   },
 
   // 🔍 Логирование
-  verbose: true,                       // Подробные логи
+  verbose: true, // Подробные логи
   logger: (level, msg) => console.log(`[${level}] ${msg}`),
 });
 ```
@@ -123,7 +123,7 @@ console.log(result);
 // Получение статистики клиента
 const stats = client.getStats();
 console.log({
-  cacheSize: stats.cacheSize,           // Размер кэша
+  cacheSize: stats.cacheSize, // Размер кэша
   inflightRequests: stats.inflightRequests, // Активные запросы
   queuedRequests: stats.queuedRequests, // Запросов в очереди
   activeRequests: stats.activeRequests, // Выполняется сейчас
@@ -164,25 +164,33 @@ client
 ## Компоненты архитектуры
 
 ### 💾 CacheManager
+
 LRU-кэш с поддержкой TTL и метаданных (etag, lastModified):
+
 - Автоматически кэширует GET/HEAD запросы
 - Настраиваемый размер и время жизни
 - Методы: `get()`, `set()`, `getWithMetadata()`, `setWithMetadata()`
 
 ### 📊 QueueManager
+
 Управление очередью запросов:
+
 - Контроль конкурентности (maxConcurrent)
 - FIFO обработка ожидующих запросов
 - Методы: `enqueue()`, `activeCount`, `queuedCount`
 
 ### 🚦 RateLimiter
+
 Token bucket алгоритм с очередью ожидания:
+
 - Плавное ограничение скорости
 - FIFO ожидание при превышении лимита
 - Методы: `wait()`, `tryConsume()`, `remainingRequests`
 
 ### 📈 MetricsManager
+
 Сбор и анализ метрик производительности:
+
 - Время выполнения запросов
 - Количество байт отправлено/получено
 - Cache hits/misses

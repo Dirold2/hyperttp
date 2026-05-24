@@ -16,8 +16,9 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
-    "rootDir": "./src"
+    "rootDir": "./src",
   },
+
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts"],
 }
