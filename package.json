@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "description": "A high-performance, universal HTTP client for Node.js with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "main": "dist/index.js",
@@ -11,6 +11,14 @@
     "type": "git",
     "url": "https://github.com/dirold2/hyperttp.git"
   },
+  "files": [
+    "dist",
+    "src/types/global.d.ts"
+  ],
+  "sideEffects": [
+    "dist/index.js",
+    "dist/index.d.ts"
+  ],
   "keywords": [
     "http",
     "client",

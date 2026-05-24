@@ -5,6 +5,7 @@
   "compilerOptions": {
     "outDir": "./dist",
     "declaration": true,
+    "removeComments": false,
     "declarationMap": true,
     "sourceMap": true,
     "strict": true,
