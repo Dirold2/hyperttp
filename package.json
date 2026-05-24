@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "A high-performance, universal HTTP client for Node.js with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "main": "dist/index.js",
