@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "description": "A high-performance, universal HTTP client for Node.js with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dirold2/hyperttp.git"
+    "url": "git+https://github.com/dirold2/hyperttp.git"
   },
   "files": [
     "dist",
@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@dirold2/dev-tools": "^1.0.12",
+    "@dirold2/dev-tools": "^1.0.14",
     "@types/node": "^25.9.1",
     "@vitest/coverage-v8": "^4.1.7",
     "@vitest/ui": "4.1.7",
