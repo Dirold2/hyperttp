@@ -1,5 +1,3 @@
-import "./augmentations.js";
-
 export { HyperClient } from "./Hyperttp/index.js";
 export { Request, PreparedRequest, UrlExtractor } from "./Hyperttp/index.js";
 
