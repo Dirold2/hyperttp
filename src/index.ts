@@ -8,6 +8,16 @@ export {
 export * from "./Types/index.js";
 export type * from "./Types/index.js";
 
+import "@hyperttp/core";
+import "@hyperttp/serializer";
+import "@hyperttp/parser";
+import "@hyperttp/queue";
+import "@hyperttp/ratelimit";
+import "@hyperttp/inflight";
+import "@hyperttp/cache";
+import "@hyperttp/interceptors";
+import "@hyperttp/metrics";
+
 export * from "@hyperttp/core";
 export * from "@hyperttp/serializer";
 export * from "@hyperttp/parser";
