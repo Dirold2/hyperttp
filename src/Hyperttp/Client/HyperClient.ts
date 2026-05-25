@@ -80,7 +80,7 @@ export class HyperClient {
     const client = new HyperCore(this._config);
 
     client.use(withSerializer());
-    client.use(withParser(this._config.responseConverter));
+    // client.use(withParser(this._config.responseConverter));
 
     if (this._config.queue?.enabled) {
       client.use(
