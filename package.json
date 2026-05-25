@@ -33,12 +33,12 @@
   ],
   "dependencies": {
     "@hyperttp/core": "^1.1.8",
-    "@hyperttp/cache": "^1.0.20",
+    "@hyperttp/cache": "^1.0.21",
     "@hyperttp/parser": "^1.0.19",
     "@hyperttp/inflight": "^1.0.4",
     "@hyperttp/interceptors": "^1.0.4",
     "@hyperttp/metrics": "^1.0.4",
-    "@hyperttp/queue": "^1.0.3",
+    "@hyperttp/queue": "^1.0.4",
     "@hyperttp/profiler": "^1.0.1",
     "@hyperttp/serializer": "^1.0.4",
     "@hyperttp/ratelimit": "^1.0.4"
