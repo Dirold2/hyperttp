@@ -33,7 +33,7 @@
   ],
   "dependencies": {
     "@hyperttp/core": "^1.1.8",
-    "@hyperttp/cache": "^1.0.21",
+    "@hyperttp/cache": "^1.0.22",
     "@hyperttp/parser": "^1.0.19",
     "@hyperttp/inflight": "^1.0.4",
     "@hyperttp/interceptors": "^1.0.4",
