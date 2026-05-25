@@ -78,7 +78,7 @@ export class RequestBuilder {
     return this;
   }
   xml(): this {
-    this._responseType = "xml";
+    this._responseType = "xml" as ResponseType;
     return this;
   }
   buffer(): this {
@@ -100,19 +100,17 @@ export class RequestBuilder {
     return this;
   }
 
+  /**
+   * @private
+   * Генерирует чистый POJO-объект запроса без аллокации замыканий
+   */
   private toRequest(): RequestInterface {
-    const url = this._url;
-    const headers = this._headers;
-    const body = this._body;
-    const signal = this._signal;
-    const responseType = this._responseType;
-
     return {
-      getURL: () => url,
-      getHeaders: () => headers,
-      getBodyData: () => body,
-      getSignal: () => signal,
-      getMeta: () => ({ responseType }),
+      url: this._url,
+      headers: this._headers,
+      body: this._body,
+      signal: this._signal,
+      meta: { responseType: this._responseType },
     };
   }
 

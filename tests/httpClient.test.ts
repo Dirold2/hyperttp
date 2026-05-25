@@ -80,7 +80,7 @@ describe("HttpClientImproved", () => {
 
     client.clearCache();
 
-    expect(client.getStats()?.cacheSize).toBe(1);
+    expect(client.getStats()?.cacheSize).toBe(0);
   });
 
   it("should cover Request class data handling", () => {

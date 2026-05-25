@@ -9,33 +9,51 @@ import type {
 /**
  * Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data.
  * Provides methods to build and manipulate the request.
- *
- * @example
- * ```ts
- * const req = new Request({
- *   scheme: "https",
- *   host: "api.example.com",
- *   port: 443,
- * });
- *
- * req.setPath("/v1/users")
- *    .addQuery({ page: "1" })
- *    .addHeaders({ Authorization: "Bearer token" });
- *
- * console.log(req.getURL()); // "https://api.example.com:443/v1/users?page=1"
- * ```
  */
 export default class Request implements RequestInterface {
   private scheme: string;
   private host: string;
   private port: number;
   private path: string;
-  private headers: RequestHeaders;
-  private query: RequestQuery;
-  private bodyData: RequestBodyData;
-  private signal?: AbortSignal;
+  private _headers: RequestHeaders;
+  private _bodyData: RequestBodyData;
+  private _signal?: AbortSignal;
   private method: string = "GET";
   private bodyType: "json" | "form" = "json";
+  private _meta: any = {};
+  public query: RequestQuery;
+
+  constructor(config: RequestConfig & { meta?: any }) {
+    this.scheme = config.scheme;
+    this.host = config.host;
+    this.port = config.port ?? (config.scheme === "https" ? 443 : 80);
+    this.path = config.path ?? "";
+    this._headers = config.headers ?? {};
+    this.query = config.query ?? {};
+    this._bodyData = config.bodyData ?? {};
+    this._signal = undefined;
+    this._meta = config.meta ?? {};
+  }
+
+  get url(): string {
+    return this.buildURL().toString();
+  }
+
+  get headers(): RequestHeaders {
+    return this._headers;
+  }
+
+  get body(): RequestBodyData {
+    return this._bodyData;
+  }
+
+  get signal(): AbortSignal | undefined {
+    return this._signal;
+  }
+
+  get meta(): any {
+    return this._meta;
+  }
 
   private buildURL(): URL {
     const url = new URL(`${this.scheme}://${this.host}`);
@@ -55,17 +73,6 @@ export default class Request implements RequestInterface {
     return url;
   }
 
-  constructor(config: RequestConfig) {
-    this.scheme = config.scheme;
-    this.host = config.host;
-    this.port = config.port ?? (config.scheme === "https" ? 443 : 80);
-    this.path = config.path ?? "";
-    this.headers = config.headers ?? {};
-    this.query = config.query ?? {};
-    this.bodyData = config.bodyData ?? {};
-    this.signal = undefined;
-  }
-
   private normalizePath(path: string): string {
     if (!path) return "";
     if (path === "/") return "";
@@ -82,17 +89,13 @@ export default class Request implements RequestInterface {
     return this;
   }
 
-  getHeaders(): RequestHeaders {
-    return this.headers;
-  }
-
   setHeaders(headers: RequestHeaders): this {
-    this.headers = { ...headers };
+    this._headers = { ...headers };
     return this;
   }
 
   addHeaders(headers: RequestHeaders): this {
-    this.headers = { ...this.headers, ...headers };
+    this._headers = { ...this._headers, ...headers };
     return this;
   }
 
@@ -122,22 +125,18 @@ export default class Request implements RequestInterface {
     return qs ? `?${qs}` : "";
   }
 
-  getBodyData(): RequestBodyData {
-    return this.bodyData;
-  }
-
   getBodyDataString(): string {
-    if (this.bodyData == null) return "";
+    if (this._bodyData == null) return "";
 
-    if (typeof this.bodyData === "string") {
-      return this.bodyData;
+    if (typeof this._bodyData === "string") {
+      return this._bodyData;
     }
 
     if (this.bodyType === "form") {
-      return new URLSearchParams(this.bodyData as any).toString();
+      return new URLSearchParams(this._bodyData as any).toString();
     }
 
-    return JSON.stringify(this.bodyData);
+    return JSON.stringify(this._bodyData);
   }
 
   toFetchInit(): RequestInit {
@@ -145,19 +144,19 @@ export default class Request implements RequestInterface {
 
     return {
       method: this.method,
-      headers: this.headers,
+      headers: this._headers as Record<string, string>,
       body: body || undefined,
-      signal: this.signal,
+      signal: this._signal,
     };
   }
 
   setBodyData(bodyData: RequestBodyData): this {
-    this.bodyData = { ...bodyData };
+    this._bodyData = { ...bodyData };
     return this;
   }
 
   addBodyData(bodyData: RequestBodyData): this {
-    this.bodyData = { ...this.bodyData, ...bodyData };
+    this._bodyData = { ...this._bodyData, ...bodyData };
     return this;
   }
 
@@ -171,15 +170,20 @@ export default class Request implements RequestInterface {
     return this;
   }
 
-  getURL(): string {
-    return this.buildURL().toString();
-  }
-
   setSignal(signal: AbortSignal): this {
-    this.signal = signal;
+    this._signal = signal;
     return this;
   }
 
+  getURL(): string {
+    return this.url;
+  }
+  getHeaders(): RequestHeaders {
+    return this.headers;
+  }
+  getBodyData(): RequestBodyData {
+    return this.body;
+  }
   getSignal(): AbortSignal | undefined {
     return this.signal;
   }
@@ -190,14 +194,15 @@ export default class Request implements RequestInterface {
       host: this.host,
       port: this.port,
       path: this.path || "",
-      headers: { ...this.headers },
+      headers: { ...this._headers },
       query: { ...this.query },
-      bodyData: { ...this.bodyData },
+      bodyData: { ...this._bodyData },
+      meta: { ...this._meta },
     })
       .setMethod(this.method)
       .setBodyType(this.bodyType);
 
-    if (this.signal) req.setSignal(this.signal);
+    if (this._signal) req.setSignal(this._signal);
 
     return req;
   }
@@ -208,30 +213,22 @@ export default class Request implements RequestInterface {
       host: this.host,
       port: this.port,
       path: this.path,
-      headers: { ...this.headers },
+      headers: { ...this._headers },
       query: { ...this.query, ...query },
-      bodyData: this.bodyData,
+      bodyData: this._bodyData,
+      meta: { ...this._meta },
     })
       .setMethod(this.method)
       .setBodyType(this.bodyType);
 
-    if (this.signal) req.setSignal(this.signal);
+    if (this._signal) req.setSignal(this._signal);
 
     return req;
   }
 }
 
 /**
- * PreparedRequest is a wrapper around Request that parses a base URL and provides the same RequestInterface methods.
- * Useful for quickly creating requests from a full URL.
- *
- * @example
- * ```ts
- * const prepReq = new PreparedRequest("https://api.example.com:443");
- * prepReq.setPath("/v1/users")
- *        .addQuery({ page: "2" });
- * console.log(prepReq.getURL()); // "https://api.example.com:443/v1/users?page=2"
- * ```
+ * PreparedRequest исправно наследует измененное свойство.
  */
 export class PreparedRequest extends Request {
   constructor(baseUrl: string) {

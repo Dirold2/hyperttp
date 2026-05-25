@@ -27,91 +27,40 @@ const STATIC_META: Record<
   Readonly<{ responseType: any }>
 > = Object.freeze({
   auto: Object.freeze({ responseType: "auto" }),
-  json: Object.freeze({
-    responseType: "json",
-  }),
+  json: Object.freeze({ responseType: "json" }),
   text: Object.freeze({ responseType: "text" }),
   buffer: Object.freeze({ responseType: "buffer" }),
   blob: Object.freeze({ responseType: "blob" }),
 });
 
-const extractHead = (res: { status: number; headers: any }) => ({
-  status: res.status,
-  headers: res.headers,
-});
-const extractStream = (res: any) => ({
-  status: res.status,
-  headers: res.headers,
-  body: res.body,
-  url: res.url,
-  clone: () => {
-    return extractStream(res);
-  },
-});
-
-class FastStringRequest implements RequestInterface {
-  constructor(
-    private readonly _url: string,
-    private readonly _meta: Readonly<{ responseType: ResponseType }>,
-    private readonly _signal?: AbortSignal,
-  ) {}
-
-  getURL() {
-    return this._url;
-  }
-  getHeaders() {
-    return EMPTY_HEADERS;
-  }
-  getBodyData() {
-    return undefined;
-  }
-  getSignal() {
-    return this._signal;
-  }
-  getMeta() {
-    return this._meta;
-  }
-}
-
-class FastObjectRequest implements RequestInterface {
-  private readonly _meta: Record<string, any>;
-  private readonly _signal?: AbortSignal;
-
-  constructor(
-    private readonly _req: RequestInterface,
-    responseType: ResponseType,
-    signal?: AbortSignal,
-  ) {
-    this._signal = _req.getSignal ? _req.getSignal() : signal;
-    const baseMeta = _req.getMeta ? _req.getMeta() : undefined;
-
-    if (baseMeta) {
-      if (baseMeta.responseType === responseType) {
-        this._meta = baseMeta;
-      } else {
-        this._meta = Object.create(baseMeta);
-        this._meta.responseType = responseType;
-      }
-    } else {
-      this._meta = STATIC_META[responseType] || { responseType };
+/**
+ * @private
+ * Вынесено из инстанса для исключения аллокаций замыканий при обработке тела ответа
+ */
+const unpackBodyFast = (body: any, responseType: ResponseType): any => {
+  if (body && typeof body === "object" && typeof body.text === "function") {
+    if (responseType === "text") return body.text();
+    if (responseType === "json") return body.json();
+    if (responseType === "blob") return body.blob();
+    if (responseType === "buffer") {
+      return typeof body.bytes === "function" ? body.bytes() : body;
     }
   }
+  return body;
+};
 
-  getURL() {
-    return this._req.getURL();
-  }
-  getHeaders() {
-    return this._req.getHeaders();
-  }
-  getBodyData() {
-    return this._req.getBodyData ? this._req.getBodyData() : undefined;
-  }
-  getSignal() {
-    return this._signal;
-  }
-  getMeta() {
-    return this._meta;
-  }
+/**
+ * @private
+ * Статический метод клонирования стрима для предотвращения создания стрелочных функций
+ */
+function streamCloneHandler(this: any) {
+  return {
+    status: this.status,
+    headers: this.headers,
+    body: this.body,
+    url: this.url,
+    clone: streamCloneHandler,
+  };
 }
 
 export class HyperClient {
@@ -170,133 +119,138 @@ export class HyperClient {
     signal?: AbortSignal,
   ): RequestInterface {
     if (typeof req === "string") {
-      const meta = STATIC_META[responseType] || { responseType };
-      return new FastStringRequest(req, meta as any, signal);
+      return {
+        url: req,
+        headers: EMPTY_HEADERS,
+        body: undefined,
+        signal,
+        meta: STATIC_META[responseType] || { responseType },
+      };
     }
-    return new FastObjectRequest(req, responseType, signal);
+
+    const baseMeta = req.meta;
+    if (baseMeta && baseMeta.responseType === responseType) {
+      if (!signal || req.signal === signal) return req;
+
+      return { ...req, signal: req.signal ?? signal };
+    }
+
+    return {
+      ...req,
+      signal: req.signal ?? signal,
+      meta: baseMeta
+        ? { ...baseMeta, responseType }
+        : STATIC_META[responseType] || { responseType },
+    };
   }
 
-  private _extract<T>(
-    promise: Promise<any>,
-    responseType: ResponseType,
-  ): Promise<T> {
-    return promise.then((res) => {
-      const body = res.body;
-      if (body && typeof body === "object" && typeof body.text === "function") {
-        if (responseType === "text") return body.text();
-        if (responseType === "json") return body.json();
-        if (responseType === "blob") return body.blob();
-        if (responseType === "buffer")
-          return typeof body.bytes === "function" ? body.bytes() : body;
-      }
-      return body;
-    });
-  }
-
-  public get<T = unknown>(
+  public async get<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    return this._extract<T>(
-      this._engine.get<T>(this.wrapRequest(req, responseType, signal), signal),
-      responseType,
+    const res = await this._engine.get<any>(
+      this.wrapRequest(req, responseType, signal),
+      signal,
     );
+    return unpackBodyFast(res.body, responseType);
   }
 
-  public post<T = unknown>(
+  public async post<T = unknown>(
     req: RequestInterface | string,
     body?: RequestBodyData,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    return this._extract<T>(
-      this._engine.post<T>(
-        this.wrapRequest(req, responseType, signal),
-        body,
-        signal,
-      ),
-      responseType,
+    const res = await this._engine.post<any>(
+      this.wrapRequest(req, responseType, signal),
+      body,
+      signal,
     );
+    return unpackBodyFast(res.body, responseType);
   }
 
-  public put<T = unknown>(
+  public async put<T = unknown>(
     req: RequestInterface | string,
     body?: RequestBodyData,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    return this._extract<T>(
-      this._engine.put<T>(
-        this.wrapRequest(req, responseType, signal),
-        body,
-        signal,
-      ),
-      responseType,
+    const res = await this._engine.put<any>(
+      this.wrapRequest(req, responseType, signal),
+      body,
+      signal,
     );
+    return unpackBodyFast(res.body, responseType);
   }
 
-  public patch<T = unknown>(
+  public async patch<T = unknown>(
     req: RequestInterface | string,
     body?: RequestBodyData,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    return this._extract<T>(
-      this._engine.patch<T>(
-        this.wrapRequest(req, responseType, signal),
-        body,
-        signal,
-      ),
-      responseType,
+    const res = await this._engine.patch<any>(
+      this.wrapRequest(req, responseType, signal),
+      body,
+      signal,
     );
+    return unpackBodyFast(res.body, responseType);
   }
 
-  public options<T = unknown>(
+  public async options<T = unknown>(
     req: RequestInterface | string,
     body?: RequestBodyData,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    return this._extract<T>(
-      this._engine.options<T>(
-        this.wrapRequest(req, responseType, signal),
-        body,
-        signal,
-      ),
-      responseType,
+    const res = await this._engine.options<any>(
+      this.wrapRequest(req, responseType, signal),
+      body,
+      signal,
     );
+    return unpackBodyFast(res.body, responseType);
   }
 
-  public delete<T = unknown>(
+  public async delete<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    return this._extract<T>(
-      this._engine.delete<T>(
-        this.wrapRequest(req, responseType, signal),
-        signal,
-      ),
-      responseType,
+    const res = await this._engine.delete<any>(
+      this.wrapRequest(req, responseType, signal),
+      signal,
     );
+    return unpackBodyFast(res.body, responseType);
   }
 
-  public head(
+  public async head(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<{ status: number; headers: Record<string, string | string[]> }> {
-    return this._engine
-      .head(this.wrapRequest(req, responseType, signal), signal)
-      .then(extractHead);
+    const res = await this._engine.head(
+      this.wrapRequest(req, responseType, signal),
+      signal,
+    );
+    return {
+      status: res.status,
+      headers: res.headers,
+    };
   }
 
-  public stream(
+  public async stream(
     req: RequestInterface | string,
     signal?: AbortSignal,
   ): Promise<HttpResponse<Readable>> {
-    return this._engine.stream(req, signal).then(extractStream);
+    const res = await this._engine.stream(req, signal);
+    return {
+      status: res.status,
+      headers: res.headers,
+      body: res.body,
+      url: res.url,
+      clone: streamCloneHandler,
+    };
   }
 
   public request(url: string): RequestBuilder {
