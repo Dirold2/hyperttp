@@ -4,7 +4,7 @@ import type {
   RequestHeaders,
   RequestInterface,
   RequestQuery,
-} from "@hyperttp/core";
+} from "@hyperttp/types";
 
 /**
  * Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data.
@@ -56,10 +56,25 @@ export default class Request implements RequestInterface {
   }
 
   private buildURL(): URL {
-    const url = new URL(`${this.scheme}://${this.host}`);
+    let targetHost = this.host;
+    let prefixPath = "";
 
+    if (targetHost.includes("://")) {
+      targetHost = targetHost.split("://")[1]!;
+    }
+
+    if (targetHost.includes("/")) {
+      const parts = targetHost.split("/");
+      targetHost = parts[0]!;
+      prefixPath = "/" + parts.slice(1).join("/");
+    }
+
+    const url = new URL(`${this.scheme}://${targetHost}`);
     url.port = this.port.toString();
-    url.pathname = this.path || "";
+
+    const finalPath =
+      prefixPath + (this.path.startsWith("/") ? this.path : `/${this.path}`);
+    url.pathname = finalPath.replace(/\/+/g, "/");
 
     for (const [key, value] of Object.entries(this.query)) {
       if (value == null) continue;
@@ -77,6 +92,12 @@ export default class Request implements RequestInterface {
     if (!path) return "";
     if (path === "/") return "";
     return path.startsWith("/") ? path : `/${path}`;
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, any> {
+    if (typeof value !== "object" || value === null) return false;
+    const proto = Object.getPrototypeOf(value);
+    return proto === Object.prototype || proto === null;
   }
 
   setPath(path: string): this {
@@ -151,12 +172,17 @@ export default class Request implements RequestInterface {
   }
 
   setBodyData(bodyData: RequestBodyData): this {
-    this._bodyData = { ...bodyData };
+    this._bodyData = this.isPlainObject(bodyData) ? { ...bodyData } : bodyData;
     return this;
   }
 
   addBodyData(bodyData: RequestBodyData): this {
-    this._bodyData = { ...this._bodyData, ...bodyData };
+    if (this.isPlainObject(this._bodyData) && this.isPlainObject(bodyData)) {
+      this._bodyData = { ...this._bodyData, ...bodyData };
+    } else {
+      // Fallback if either is a primitive, stream, or buffer
+      this._bodyData = bodyData;
+    }
     return this;
   }
 
@@ -196,7 +222,9 @@ export default class Request implements RequestInterface {
       path: this.path || "",
       headers: { ...this._headers },
       query: { ...this.query },
-      bodyData: { ...this._bodyData },
+      bodyData: this.isPlainObject(this._bodyData)
+        ? { ...this._bodyData }
+        : this._bodyData,
       meta: { ...this._meta },
     })
       .setMethod(this.method)

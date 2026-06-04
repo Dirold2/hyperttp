@@ -1,59 +1,42 @@
-import {
+import type {
   HttpResponse,
-  HyperCore,
   ResponseType,
-  type HttpClientOptions,
-  type RequestBodyData,
-  type RequestInterface,
-} from "@hyperttp/core";
+  HttpClientOptions,
+  RequestBodyData,
+  RequestInterface,
+} from "@hyperttp/types";
 
-import type { Readable } from "node:stream";
-
+import { HyperCore } from "@hyperttp/core";
 import { RequestBuilder } from "../Utils/RequestBuilder.js";
 import { defaultConfig } from "../defaultConfig.js";
 
 import { withSerializer } from "@hyperttp/serializer";
-import { withParser } from "@hyperttp/parser";
 import { withQueue } from "@hyperttp/queue";
 import { withRateLimit } from "@hyperttp/ratelimit";
 import { withInflight } from "@hyperttp/inflight";
 import { withCache } from "@hyperttp/cache";
 import { withInterceptors } from "@hyperttp/interceptors";
 import { withMetrics } from "@hyperttp/metrics";
+import { withParser } from "@hyperttp/parser";
 
-const EMPTY_HEADERS = Object.freeze({});
-const STATIC_META: Record<
-  string,
-  Readonly<{ responseType: any }>
-> = Object.freeze({
-  auto: Object.freeze({ responseType: "auto" }),
-  json: Object.freeze({ responseType: "json" }),
-  text: Object.freeze({ responseType: "text" }),
-  buffer: Object.freeze({ responseType: "buffer" }),
-  blob: Object.freeze({ responseType: "blob" }),
-});
-
-/**
- * @private
- * Вынесено из инстанса для исключения аллокаций замыканий при обработке тела ответа
- */
-const unpackBodyFast = (body: any, responseType: ResponseType): any => {
-  if (body && typeof body === "object" && typeof body.text === "function") {
-    if (responseType === "text") return body.text();
-    if (responseType === "json") return body.json();
-    if (responseType === "blob") return body.blob();
-    if (responseType === "buffer") {
-      return typeof body.bytes === "function" ? body.bytes() : body;
-    }
+declare module "@hyperttp/core" {
+  interface HyperCore {
+    getStats?: () => Record<string, unknown>;
+    clearCache?: () => void | Promise<void>;
+    getAllMetrics?: () => Record<string, unknown>;
+    getMetrics?: (key: string) => unknown;
   }
-  return body;
+}
+
+type StreamResponseBody = ReadableStream<Uint8Array> & {
+  dump?: () => Promise<void>;
 };
 
-/**
- * @private
- * Статический метод клонирования стрима для предотвращения создания стрелочных функций
- */
-function streamCloneHandler(this: any) {
+const EMPTY_HEADERS: Readonly<Record<string, never>> = Object.freeze({});
+
+function streamCloneHandler(
+  this: HttpResponse<StreamResponseBody>,
+): HttpResponse<StreamResponseBody> {
   return {
     status: this.status,
     headers: this.headers,
@@ -62,6 +45,14 @@ function streamCloneHandler(this: any) {
     clone: streamCloneHandler,
   };
 }
+
+type RequestLike = RequestInterface & {
+  body?: RequestBodyData;
+  bodyData?: RequestBodyData;
+  _bodyData?: RequestBodyData;
+  query?: Record<string, unknown>;
+  url?: string;
+};
 
 export class HyperClient {
   private readonly _engine: HyperCore;
@@ -75,182 +66,211 @@ export class HyperClient {
         ...defaultConfig.network,
         ...config.network,
       },
+      logger: config.logger ?? (() => {}),
     };
 
     const client = new HyperCore(this._config);
 
     client.use(withSerializer());
-    // client.use(withParser(this._config.responseConverter));
-
-    if (this._config.queue?.enabled) {
-      client.use(
-        withQueue({
-          maxConcurrent: this._config.network?.maxConcurrent || 500,
-        }),
-      );
-    }
-
-    if (this._config.rateLimit?.enabled) {
-      client.use(withRateLimit(this._config.rateLimit));
-    }
-
-    if (this._config.inflight?.enabled) {
-      client.use(withInflight());
-    }
-
-    if (this._config.cache?.enabled) {
-      client.use(withCache());
-    }
-
-    if (this._config.interceptors?.enabled) {
-      client.use(withInterceptors());
-    }
-
-    if (this._config.metrics?.enabled) {
-      client.use(withMetrics());
-    }
+    client.use(withParser(this._config.responseConverter));
+    client.use(withQueue());
+    client.use(withRateLimit(this._config.rateLimit));
+    client.use(withInflight());
+    client.use(withCache());
+    client.use(withInterceptors());
+    client.use(withMetrics());
 
     this._engine = client;
   }
 
   private wrapRequest(
-    req: RequestInterface | string,
+    req: RequestInterface,
     responseType: ResponseType,
     signal?: AbortSignal,
   ): RequestInterface {
-    if (typeof req === "string") {
-      return {
-        url: req,
-        headers: EMPTY_HEADERS,
-        body: undefined,
-        signal,
-        meta: STATIC_META[responseType] || { responseType },
-      };
+    const r = req as RequestLike;
+    const baseMeta = r.meta;
+
+    const wrapped = Object.assign({}, r);
+    wrapped.signal = r.signal ?? signal;
+    wrapped.meta = baseMeta
+      ? Object.assign({}, baseMeta, { responseType })
+      : { responseType };
+
+    const body = r.body ?? r.bodyData ?? r._bodyData;
+    if (body !== undefined) {
+      wrapped.body = body;
     }
 
-    const baseMeta = req.meta;
-    if (baseMeta && baseMeta.responseType === responseType) {
-      if (!signal || req.signal === signal) return req;
+    return wrapped;
+  }
 
-      return { ...req, signal: req.signal ?? signal };
-    }
+  private extractBody(
+    req: RequestInterface | string,
+    fallback?: RequestBodyData,
+  ): RequestBodyData | undefined {
+    if (typeof req === "string") return fallback;
+    const r = req as RequestLike;
+    return r.body ?? r.bodyData ?? r._bodyData ?? fallback;
+  }
 
+  private static extractBodyFromResponse(res: HttpResponse<any>): any {
+    return res.body;
+  }
+
+  private static formatHeadResponse(res: HttpResponse<any>) {
     return {
-      ...req,
-      signal: req.signal ?? signal,
-      meta: baseMeta
-        ? { ...baseMeta, responseType }
-        : STATIC_META[responseType] || { responseType },
+      status: res.status,
+      headers: res.headers as Record<string, string | string[]>,
     };
   }
 
-  public async get<T = unknown>(
+  private static formatStreamResponse(res: {
+    status: number;
+    headers: any;
+    body: any;
+    url?: string;
+  }) {
+    return {
+      status: res.status,
+      headers: res.headers,
+      body: res.body as StreamResponseBody,
+      url: res.url,
+      clone: streamCloneHandler,
+    };
+  }
+
+  private static parseJsonOrText(text: string) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { data: text };
+    }
+  }
+
+  public get<T>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    const res = await this._engine.get<any>(
-      this.wrapRequest(req, responseType, signal),
-      signal,
-    );
-    return unpackBodyFast(res.body, responseType);
+    const wrapped =
+      typeof req === "string"
+        ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
+        : this.wrapRequest(req, responseType, signal);
+
+    return this._engine
+      .get<T>(wrapped, signal)
+      .then(HyperClient.extractBodyFromResponse);
   }
 
-  public async post<T = unknown>(
+  public post<T = unknown>(
     req: RequestInterface | string,
+    responseType: ResponseType = "auto",
     body?: RequestBodyData,
-    responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    const res = await this._engine.post<any>(
-      this.wrapRequest(req, responseType, signal),
-      body,
-      signal,
-    );
-    return unpackBodyFast(res.body, responseType);
+    const finalBody = body ?? this.extractBody(req);
+    const wrapped =
+      typeof req === "string"
+        ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
+        : this.wrapRequest(req, responseType, signal);
+
+    return this._engine.post<any>(wrapped, finalBody, signal).then((res) => {
+      if (res.body instanceof ReadableStream) {
+        return new Response(res.body).text().then(HyperClient.parseJsonOrText);
+      }
+      return res.body;
+    });
   }
 
-  public async put<T = unknown>(
+  public put<T = unknown>(
     req: RequestInterface | string,
+    responseType: ResponseType = "auto",
     body?: RequestBodyData,
-    responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    const res = await this._engine.put<any>(
-      this.wrapRequest(req, responseType, signal),
-      body,
-      signal,
-    );
-    return unpackBodyFast(res.body, responseType);
+    const finalBody = body ?? this.extractBody(req);
+    const wrapped =
+      typeof req === "string"
+        ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
+        : this.wrapRequest(req, responseType, signal);
+
+    return this._engine
+      .put<T>(wrapped, finalBody, signal)
+      .then(HyperClient.extractBodyFromResponse);
   }
 
-  public async patch<T = unknown>(
+  public patch<T = unknown>(
     req: RequestInterface | string,
+    responseType: ResponseType = "auto",
     body?: RequestBodyData,
-    responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    const res = await this._engine.patch<any>(
-      this.wrapRequest(req, responseType, signal),
-      body,
-      signal,
-    );
-    return unpackBodyFast(res.body, responseType);
+    const finalBody = body ?? this.extractBody(req);
+    const wrapped =
+      typeof req === "string"
+        ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
+        : this.wrapRequest(req, responseType, signal);
+
+    return this._engine
+      .patch<T>(wrapped, finalBody, signal)
+      .then(HyperClient.extractBodyFromResponse);
   }
 
-  public async options<T = unknown>(
+  public options<T = unknown>(
     req: RequestInterface | string,
+    responseType: ResponseType = "auto",
     body?: RequestBodyData,
-    responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    const res = await this._engine.options<any>(
-      this.wrapRequest(req, responseType, signal),
-      body,
-      signal,
-    );
-    return unpackBodyFast(res.body, responseType);
+    const finalBody = body ?? this.extractBody(req);
+    const wrapped =
+      typeof req === "string"
+        ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
+        : this.wrapRequest(req, responseType, signal);
+
+    return this._engine
+      .options<T>(wrapped, finalBody, signal)
+      .then(HyperClient.extractBodyFromResponse);
   }
 
-  public async delete<T = unknown>(
+  public delete<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    const res = await this._engine.delete<any>(
-      this.wrapRequest(req, responseType, signal),
-      signal,
-    );
-    return unpackBodyFast(res.body, responseType);
+    const wrapped =
+      typeof req === "string"
+        ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
+        : this.wrapRequest(req, responseType, signal);
+
+    return this._engine
+      .delete<T>(wrapped, signal)
+      .then(HyperClient.extractBodyFromResponse);
   }
 
-  public async head(
+  public head(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<{ status: number; headers: Record<string, string | string[]> }> {
-    const res = await this._engine.head(
-      this.wrapRequest(req, responseType, signal),
-      signal,
-    );
-    return {
-      status: res.status,
-      headers: res.headers,
-    };
+    const wrapped =
+      typeof req === "string"
+        ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
+        : this.wrapRequest(req, responseType, signal);
+
+    return this._engine
+      .head(wrapped, signal)
+      .then(HyperClient.formatHeadResponse);
   }
 
-  public async stream(
+  public stream(
     req: RequestInterface | string,
     signal?: AbortSignal,
-  ): Promise<HttpResponse<Readable>> {
-    const res = await this._engine.stream(req, signal);
-    return {
-      status: res.status,
-      headers: res.headers,
-      body: res.body,
-      url: res.url,
-      clone: streamCloneHandler,
-    };
+  ): Promise<HttpResponse<StreamResponseBody>> {
+    return this._engine
+      .stream(req, signal)
+      .then(HyperClient.formatStreamResponse);
   }
 
   public request(url: string): RequestBuilder {
@@ -272,23 +292,23 @@ export class HyperClient {
     return this.extend(options);
   }
 
-  public destroy(): Promise<void> {
-    return this._engine.destroy();
+  public async destroy(): Promise<void> {
+    await this._engine.destroy();
   }
 
-  public getStats() {
+  public getStats(): Record<string, unknown> | undefined {
     return this._engine.getStats?.();
   }
 
-  public clearCache() {
-    return (this._engine as any).clearCache?.();
+  public clearCache(): void | Promise<void> | undefined {
+    return this._engine.clearCache?.();
   }
 
-  public getAllMetrics() {
+  public getAllMetrics(): Record<string, unknown> | undefined {
     return this._engine.getAllMetrics?.();
   }
 
-  public getMetrics(key: string) {
-    return (this._engine as any).getMetrics?.(key);
+  public getMetrics(key: string): unknown {
+    return this._engine.getMetrics?.(key);
   }
 }

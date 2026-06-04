@@ -1,4 +1,7 @@
-import { UrlExtractorInterface, UrlPattern } from "../Types/url-extractor.js";
+import type {
+  UrlExtractorInterface,
+  UrlPattern,
+} from "../Types/url-extractor.js";
 
 /**
  * Universal URL Extractor
@@ -135,7 +138,7 @@ export default class UrlExtractor implements UrlExtractorInterface {
 
         return result as Record<string, T>;
       } catch {
-        // continue searching for a matching pattern
+        //
       }
     }
 
