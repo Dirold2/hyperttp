@@ -13,13 +13,13 @@ export class RequestBuilder {
   private _responseType: ResponseType = "json";
   private _client: HyperClient;
   private _signal?: AbortSignal;
+  private _queryParams?: Record<string, string | number | boolean>;
 
   /**
-   * @ru Создаёт экземпляр строителя запросов.
+   * @ru Создаёт экземпляр построителя запросов.
    * @en Creates a request builder instance.
-   *
-   * @param url - Base URL.
-   * @param client - HyperClient instance.
+   * @param url - Base URL for the request.
+   * @param client - HyperClient instance used to execute the request.
    */
   constructor(url: string, client: HyperClient) {
     this._url = url;
@@ -27,11 +27,10 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Добавляет заголовки к запросу.
-   * @en Adds headers to the request.
-   *
-   * @param headers - Headers object.
-   * @returns Current builder instance for chaining.
+   * @ru Добавляет заголовки к запросу (мержит с существующими).
+   * @en Adds headers to the request (merges with existing ones).
+   * @param headers - Headers object to merge.
+   * @returns This builder instance for chaining.
    */
   headers(headers: Record<string, string>): this {
     Object.assign(this._headers, headers);
@@ -39,11 +38,10 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает тело запроса.
-   * @en Sets request body.
-   *
+   * @ru Устанавливает тело запроса (произвольные данные).
+   * @en Sets the request body (arbitrary data).
    * @param bodyData - Request body data.
-   * @returns Current builder instance for chaining.
+   * @returns This builder instance for chaining.
    */
   body(bodyData: unknown): this {
     this._body = bodyData;
@@ -51,12 +49,10 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает JSON тело и автоматически добавляет Content-Type заголовок.
-   * @en Sets JSON body and automatically adds Content-Type header.
-   *
-   * @typeParam B - Body type.
-   * @param body - JSON body data.
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает тело запроса в формате JSON и автоматически добавляет заголовок Content-Type: application/json.
+   * @en Sets the request body as JSON and automatically adds Content-Type: application/json header.
+   * @param body - JSON-serializable body.
+   * @returns This builder instance for chaining.
    */
   jsonBody<B>(body: B): this {
     this._body = body;
@@ -65,26 +61,28 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Добавляет query параметры к URL.
-   * @en Adds query parameters to the URL.
-   *
-   * @param params - Query parameters object.
-   * @returns Current builder instance for chaining.
+   * @ru Добавляет параметры запроса (query string). Мержит с существующими.
+   * @en Adds query parameters to the URL (query string). Merges with existing ones.
+   * @param params - Object with query parameters (keys and values).
+   * @returns This builder instance for chaining.
    */
   query(params: Record<string, string | number | boolean>): this {
-    const urlObj = new URL(this._url);
-    for (const [k, v] of Object.entries(params)) {
-      urlObj.searchParams.set(k, String(v));
+    if (!this._queryParams) {
+      this._queryParams = {};
     }
-    this._url = urlObj.toString();
+
+    for (const key in params) {
+      if (Object.prototype.hasOwnProperty.call(params, key)) {
+        this._queryParams[key] = params[key]!;
+      }
+    }
     return this;
   }
 
   /**
-   * @ru Устанавливает метод запроса на GET.
-   * @en Sets request method to GET.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает метод HTTP в GET.
+   * @en Sets HTTP method to GET.
+   * @returns This builder instance for chaining.
    */
   get(): this {
     this._method = "GET";
@@ -92,10 +90,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает метод запроса на POST.
-   * @en Sets request method to POST.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает метод HTTP в POST.
+   * @en Sets HTTP method to POST.
+   * @returns This builder instance for chaining.
    */
   post(): this {
     this._method = "POST";
@@ -103,10 +100,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает метод запроса на PUT.
-   * @en Sets request method to PUT.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает метод HTTP в PUT.
+   * @en Sets HTTP method to PUT.
+   * @returns This builder instance for chaining.
    */
   put(): this {
     this._method = "PUT";
@@ -114,10 +110,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает метод запроса на PATCH.
-   * @en Sets request method to PATCH.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает метод HTTP в PATCH.
+   * @en Sets HTTP method to PATCH.
+   * @returns This builder instance for chaining.
    */
   patch(): this {
     this._method = "PATCH";
@@ -125,10 +120,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает метод запроса на DELETE.
-   * @en Sets request method to DELETE.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает метод HTTP в DELETE.
+   * @en Sets HTTP method to DELETE.
+   * @returns This builder instance for chaining.
    */
   delete(): this {
     this._method = "DELETE";
@@ -136,10 +130,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает метод запроса на HEAD.
-   * @en Sets request method to HEAD.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает метод HTTP в HEAD.
+   * @en Sets HTTP method to HEAD.
+   * @returns This builder instance for chaining.
    */
   head(): this {
     this._method = "HEAD";
@@ -147,10 +140,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает метод запроса на OPTIONS.
-   * @en Sets request method to OPTIONS.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает метод HTTP в OPTIONS.
+   * @en Sets HTTP method to OPTIONS.
+   * @returns This builder instance for chaining.
    */
   options(): this {
     this._method = "OPTIONS";
@@ -158,10 +150,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает тип ответа на JSON.
-   * @en Sets response type to JSON.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает ожидаемый тип ответа в JSON (по умолчанию).
+   * @en Sets expected response type to JSON (default).
+   * @returns This builder instance for chaining.
    */
   json(): this {
     this._responseType = "json";
@@ -169,10 +160,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает тип ответа на текст.
-   * @en Sets response type to text.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает ожидаемый тип ответа в текст (string).
+   * @en Sets expected response type to text (string).
+   * @returns This builder instance for chaining.
    */
   text(): this {
     this._responseType = "text";
@@ -180,10 +170,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает тип ответа на XML.
-   * @en Sets response type to XML.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает ожидаемый тип ответа в XML (как текст).
+   * @en Sets expected response type to XML (as text).
+   * @returns This builder instance for chaining.
    */
   xml(): this {
     this._responseType = "xml" as ResponseType;
@@ -191,10 +180,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает тип ответа на буфер.
-   * @en Sets response type to buffer.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает ожидаемый тип ответа в буфер (Buffer / Uint8Array).
+   * @en Sets expected response type to buffer (Buffer / Uint8Array).
+   * @returns This builder instance for chaining.
    */
   buffer(): this {
     this._responseType = "buffer";
@@ -202,10 +190,9 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает тип ответа на поток.
-   * @en Sets response type to stream.
-   *
-   * @returns Current builder instance for chaining.
+   * @ru Устанавливает ожидаемый тип ответа в поток (ReadableStream).
+   * @en Sets expected response type to stream (ReadableStream).
+   * @returns This builder instance for chaining.
    */
   stream(): this {
     this._responseType = "stream";
@@ -213,11 +200,10 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает AbortSignal для отмены запроса.
-   * @en Sets AbortSignal for request cancellation.
-   *
+   * @ru Устанавливает сигнал для отмены запроса (AbortSignal).
+   * @en Sets an abort signal for the request.
    * @param signal - AbortSignal instance.
-   * @returns Current builder instance for chaining.
+   * @returns This builder instance for chaining.
    */
   signal(signal: AbortSignal): this {
     this._signal = signal;
@@ -225,11 +211,10 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает таймаут для запроса.
-   * @en Sets timeout for the request.
-   *
+   * @ru Устанавливает таймаут запроса в миллисекундах. Создаёт AbortSignal.timeout.
+   * @en Sets a request timeout in milliseconds. Creates an AbortSignal.timeout.
    * @param ms - Timeout in milliseconds.
-   * @returns Current builder instance for chaining.
+   * @returns This builder instance for chaining.
    */
   timeout(ms: number): this {
     this._signal = AbortSignal.timeout(ms);
@@ -237,15 +222,25 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Преобразует текущее состояние строителя в объект запроса.
-   * @en Converts current builder state to request object.
-   *
-   * @private
-   * @returns Request interface object.
+   * Высокопроизводительная ленивая компиляция запроса
    */
   private toRequest(): RequestInterface {
+    let finalUrl = this._url;
+
+    if (this._queryParams) {
+      const urlObj = new URL(this._url);
+      const qp = this._queryParams;
+
+      for (const k in qp) {
+        if (Object.prototype.hasOwnProperty.call(qp, k)) {
+          urlObj.searchParams.set(k, String(qp[k]));
+        }
+      }
+      finalUrl = urlObj.toString();
+    }
+
     return {
-      url: this._url,
+      url: finalUrl,
       headers: this._headers,
       body: this._body,
       signal: this._signal,
@@ -254,72 +249,41 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Отправляет сконфигурированный запрос.
-   * @en Sends the configured request.
-   *
-   * @typeParam T - Return data type.
-   * @returns Promise with response data or stream response.
+   * Сквозная отправка промиса БЕЗ аллокаций async-контекстов
+   * @ru Выполняет запрос с текущими настройками и возвращает Promise с результатом.
+   * @en Executes the request with current settings and returns a Promise with the result.
+   * @returns Promise resolving to the response (type depends on responseType).
    */
-  async send<T = any>(): Promise<T> {
+  send<T = any>(): Promise<T> {
     const req = this.toRequest();
+    const responseType = this._responseType;
+    const signal = this._signal;
 
-    if (this._responseType === "stream") {
-      return this._client.stream(req, this._signal) as Promise<T>;
+    if (responseType === "stream") {
+      return this._client.stream(req, signal) as Promise<T>;
     }
 
     switch (this._method) {
       case "GET":
-        return this._client.get(
-          req,
-          this._responseType,
-          this._signal,
-        ) as Promise<T>;
+        return this._client.get<T>(req, responseType, signal);
       case "POST":
-        return this._client.post(
-          req,
-          this._responseType,
-          this._body,
-          this._signal,
-        ) as Promise<T>;
+        return this._client.post<T>(req, responseType, this._body, signal);
       case "PUT":
-        return this._client.put(
-          req,
-          this._responseType,
-          this._body,
-          this._signal,
-        ) as Promise<T>;
+        return this._client.put<T>(req, responseType, this._body, signal);
       case "PATCH":
-        return this._client.patch(
-          req,
-          this._responseType,
-          this._body,
-          this._signal,
-        ) as Promise<T>;
+        return this._client.patch<T>(req, responseType, this._body, signal);
       case "DELETE":
-        return this._client.delete(
-          req,
-          this._responseType,
-          this._signal,
-        ) as Promise<T>;
+        return this._client.delete<T>(req, responseType, signal);
       case "OPTIONS":
-        return this._client.options(
-          req,
-          this._responseType,
-          this._body,
-          this._signal,
-        ) as Promise<T>;
+        return this._client.options<T>(req, responseType, this._body, signal);
       case "HEAD":
         return this._client.head(
           req,
-          this._responseType,
-          this._signal,
-        ) as Promise<T>;
+          responseType,
+          signal,
+        ) as unknown as Promise<T>;
       default:
-        return this._client.get(
-          req,
-          this._responseType,
-          this._signal,
-        ) as Promise<T>;
+        return this._client.get<T>(req, responseType, signal);
     }
   }
 }
