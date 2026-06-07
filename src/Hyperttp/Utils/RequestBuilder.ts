@@ -222,7 +222,9 @@ export class RequestBuilder {
   }
 
   /**
-   * Высокопроизводительная ленивая компиляция запроса
+   * @ru Формирует объект запроса RequestInterface из текущих настроек.
+   * @en Builds a RequestInterface object from current settings.
+   * @returns RequestInterface ready for dispatching.
    */
   private toRequest(): RequestInterface {
     let finalUrl = this._url;
@@ -249,7 +251,6 @@ export class RequestBuilder {
   }
 
   /**
-   * Сквозная отправка промиса БЕЗ аллокаций async-контекстов
    * @ru Выполняет запрос с текущими настройками и возвращает Promise с результатом.
    * @en Executes the request with current settings and returns a Promise with the result.
    * @returns Promise resolving to the response (type depends on responseType).

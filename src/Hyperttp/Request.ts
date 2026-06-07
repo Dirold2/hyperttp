@@ -80,6 +80,11 @@ export default class Request implements RequestInterface {
     return this._meta;
   }
 
+  /**
+   * @ru Строит объект URL из текущих параметров.
+   * @en Builds a URL object from current parameters.
+   * @returns URL instance.
+   */
   private buildURL(): URL {
     let targetHost = this.host;
     let prefixPath = "";
@@ -113,12 +118,24 @@ export default class Request implements RequestInterface {
     return url;
   }
 
+  /**
+   * @ru Нормализует путь, добавляя ведущий слеш при необходимости.
+   * @en Normalizes the path by adding a leading slash if needed.
+   * @param path - Raw path string.
+   * @returns Normalized path.
+   */
   private normalizePath(path: string): string {
     if (!path) return "";
     if (path === "/") return "";
     return path.startsWith("/") ? path : `/${path}`;
   }
 
+  /**
+   * @ru Проверяет, является ли значение простым объектом (не массив, не дата, не буфер и т.д.).
+   * @en Checks whether a value is a plain object (not array, date, buffer, etc.).
+   * @param value - Value to check.
+   * @returns True if the value is a plain object.
+   */
   private isPlainObject(value: unknown): value is Record<string, any> {
     if (typeof value !== "object" || value === null) return false;
     const proto = Object.getPrototypeOf(value);
@@ -273,7 +290,6 @@ export default class Request implements RequestInterface {
     if (this.isPlainObject(this._bodyData) && this.isPlainObject(bodyData)) {
       this._bodyData = { ...this._bodyData, ...bodyData };
     } else {
-      // Fallback if either is a primitive, stream, or buffer
       this._bodyData = bodyData;
     }
     return this;
@@ -423,6 +439,12 @@ export class PreparedRequest extends Request {
   }
 }
 
+/**
+ * @ru Определяет порт из URL: если порт явно указан, возвращает его число; иначе возвращает 443 для https, 80 для http.
+ * @en Determines the port from a URL: if port is explicitly specified, returns its number; otherwise returns 443 for https, 80 for http.
+ * @param url - URL object.
+ * @returns Port number.
+ */
 function resolvePort(url: URL): number {
   if (url.port !== "") {
     const n = Number(url.port);

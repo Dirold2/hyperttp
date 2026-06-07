@@ -1,205 +1,186 @@
-# Hyperttp
+# Hyperttp ⚡
 
-Продвинутый HTTP-клиент для Node.js с кешированием, ограничением скорости,
-очередями запросов, автоматическими повторными попытками,
-поддержкой cookie и парсингом JSON/XML.
+[Русский](https://github.com/Dirold2/hyperttp/tree/main/lang/ru) • [English](https://github.com/Dirold2/hyperttp)
 
-## Возможности
+Продвинутый HTTP-клиент для Node.js и Bun с поддержкой кэширования, ограничения частоты запросов (rate limiting),
+очередей, предотвращения дублирования запросов (inflight), сбора метрик и удобным цепочечным Fluent API.
+Построен как многофункциональная надстройка над оптимизированным ядром `@hyperttp/core`.
 
-- Автоматическое объединение одинаковых запросов (deduplication)
-- LRU-кеширование с TTL
-- Настраиваемое ограничение скорости (rate limiting)
-- Управление конкурентными запросами
-- Экспоненциальные задержки с джиттером при повторных попытках
-- Поддержка cookie
-- Автоматический парсинг ответов (JSON/XML/text/buffer)
-- Автоматическая обработка редиректов
-- Удобный Fluent API через RequestBuilder
+## 🔥 Ключевые особенности
 
-## Установка
+- **🔀 Управление параллелизмом:** Встроенный плагин очередей (`withQueue`) для контроля над лимитами одновременных запросов.
+- **💾 Умное LRU-кэширование:** Плагин `withCache` с поддержкой TTL для предотвращения избыточного сетевого трафика.
+- **🚦 Ограничение частоты (Rate Limiting):** Защита от блокировок со стороны внешних API с помощью алгоритма Token Bucket.
+- **🛡️ Предотвращение дублирования (Inflight):** Защита от создания повторных идентичных запросов, если первый еще выполняется.
+- **📈 Сбор метрик производительности:** Мониторинг задержек, RPS и общего состояния работы клиента из коробки.
+- **🔌 Модульная архитектура:** Возможность гибкой кастомизации за счет предустановленных плагинов и перехватчиков.
+- **💎 Удобный Fluent Request Builder API:** Цепочечная сборка конфигурации любой сложности.
+
+---
+
+## 🚀 Установка
 
 ```bash
 npm install hyperttp
+
 ```
 
 ---
 
-## 🚀 Простой вариант использования
+## 📦 Быстрый старт
 
-Начните работу за секунды — просто импортируйте и делайте запросы:
+Просто импортируйте `HyperClient` и выполняйте запросы. Все ключевые плагины (кэширование, очереди, лимитеры)
+активируются автоматически при инициализации.
 
 ```typescript
-import HttpClientImproved from "hyperttp";
+import { HyperClient } from "hyperttp";
 
-const client = new HttpClientImproved();
+const client = new HyperClient();
 
-// Простой GET-запрос
-const data = await client.get("https://api.example.com/data");
-console.log(data);
+// Простой GET-запрос (автоматически возвращает сразу распарсенное тело ответа)
+const data = await client.get<MyDataType>("https://api.example.com/data");
 
-// POST-запрос с JSON-телом
-const postData = await client.post("https://api.example.com/items", {
-  name: "Item 1",
+// POST-запрос с указанием ожидаемого типа ответа и телом запроса
+const newItem = await client.post("https://api.example.com/items", "json", {
+  name: "Новый элемент",
 });
-console.log(postData);
 ```
-
-**Всё!** Кэширование, очередь запросов и повторные попытки уже включены по умолчанию.
 
 ---
 
-## ⚙️ Расширенный вариант с полной конфигурацией
+## ⚙️ Расширенная конфигурация
 
-Настройте все компоненты под ваши задачи:
+Вы можете тонко настроить каждый компонент системы, передав параметры в конструктор `HyperClient`:
 
 ```typescript
-import HttpClientImproved from "hyperttp";
+import { HyperClient } from "hyperttp";
 
-const client = new HttpClientImproved({
-  // 🌐 Сетевые настройки
+const client = new HyperClient({
+  // 🌐 Сетевые настройки (NetworkOptions)
   network: {
-    timeout: 10000, // Таймаут запроса (мс)
-    maxConcurrent: 50, // Максимум одновременных запросов
-    maxRedirects: 5, // Максимум редиректов
-    followRedirects: true, // Следовать редиректам
-    userAgent: "MyApp/1.0", // User-Agent
-    allowHttp2: true, // Разрешить HTTP/2
-    pipelining: 10, // Конвейеризация запросов
-    keepAliveTimeout: 30000, // Keep-alive таймаут
-    rejectUnauthorized: false, // Проверка SSL сертификатов
+    timeout: 10000, // Таймаут запроса в мс
+    maxConcurrent: 50, // Лимит одновременных запросов (0 — без лимита)
+    pipelining: 1, // Количество pipelined-запросов на одно соединение
+    keepAliveTimeout: 30000, // Таймаут keep-alive для сокетов в мс
+    rejectUnauthorized: true, // Отклонять недоверенные SSL-сертификаты
+    followRedirects: true, // Автоматически следовать редиректам
+    maxRedirects: 5, // Максимальное количество редиректов
+    maxResponseBytes: 10 * 1024 * 1024, // Максимальный размер тела ответа (10 МБ)
+    userAgent: "HyperClient/2.0", // Заголовок User-Agent по умолчанию
+    headers: {
+      // Базовые заголовки для всех запросов
+      "X-App-Client": "Backend",
+    },
+    validateStatus: (status) => status >= 200 && status < 300, // Валидация HTTP-статусов
   },
 
-  // 💾 Кеширование (LRU cache)
-  cache: {
-    enabled: true, // Включить кэш
-    ttl: 1000 * 60 * 5, // Время жизни кэша (5 минут)
-    maxSize: 500, // Максимальный размер кэша (записей)
-  },
-
-  // 🚦 Ограничение скорости (Token Bucket)
-  rateLimit: {
-    enabled: true, // Включить rate limiting
-    maxRequests: 100, // Максимум запросов
-    windowMs: 60000, // Окно времени (мс)
-  },
-
-  // 📊 Очередь запросов
-  queue: {
-    enabled: true, // Включить очередь
-  },
-
-  // 🔄 Повторные попытки
+  // 🔄 Логика автоматических повторов (RetryOptions)
   retry: {
-    maxRetries: 3, // Максимум попыток
-    baseDelay: 1000, // Базовая задержка (мс)
-    maxDelay: 10000, // Максимальная задержка (мс)
-    jitter: true, // Добавить случайность
-    retryStatusCodes: [408, 429, 500, 502, 503, 504],
+    maxRetries: 3, // Количество попыток
+    baseDelay: 1000, // Начальная задержка между повторами (мс)
+    maxDelay: 10000, // Верхний лимит задержки (мс)
+    retryStatusCodes: [408, 429, 502, 503, 504], // Статусы, триггерящие повтор
+    jitter: true, // Случайный джиттер против "громового стада"
   },
 
-  // 📈 Метрики
-  metrics: {
-    enabled: true, // Сбор метрик
-    maxHistory: 1000, // История метрик
+  // 📈 Метрики и логирование
+  trackMetrics: true, // Включить сбор метрик производительности
+  verbose: false, // Включить подробный (детальный) вывод логов
+  logger: (level, message, meta) => {
+    // Кастомная функция логирования
+    console.log(`[${level}] ${message}`, meta ?? "");
   },
 
-  // 🔍 Логирование
-  verbose: true, // Подробные логи
-  logger: (level, msg) => console.log(`[${level}] ${msg}`),
+  // 🔌 Управление плагинами
+  pluginDirs: ["./plugins"], // Директории для автосканирования внешних плагинов
+  plugins: [], // Дополнительные инстансы плагинов или пути к ним
+
+  // 💾 Опции плагинов (расширяются через HyperttpPluginsExtension)
+  cache: {
+    enabled: true,
+    ttl: 300000,
+    maxSize: 500,
+  },
+  rateLimit: {
+    enabled: true,
+    maxRequests: 100,
+    windowMs: 60000,
+  },
+  inflight: {
+    enabled: true,
+  },
 });
 ```
 
-### Пример использования с расширенными возможностями
+---
+
+## 🛠️ Использование продвинутых функций
+
+### Цепочечный построитель (Fluent Builder API)
+
+Используйте метод `.request(url)` для быстрого и наглядного конфигурирования запросов любой сложности:
 
 ```typescript
-// Использование Fluent RequestBuilder
 const result = await client
   .request("https://api.example.com/search")
-  .query({ q: "hyperttp", limit: 10 })
+  .post() // Установка HTTP-метода (по умолчанию GET)
+  .query({ q: "hyperttp", p: 1 }) // Добавление Query параметров в URL
   .headers({ Authorization: "Bearer TOKEN" })
-  .json()
+  .jsonBody({ activeOnly: true }) // Автоматически выставит Content-Type: application/json
+  .json() // Ожидаем ответ в формате JSON (.text(), .buffer(), .stream())
+  .timeout(5000) // Встроенный автоматический AbortSignal.timeout
   .send();
+```
 
-console.log(result);
+### Статистика, кэш и метрики
 
-// Получение статистики клиента
+```typescript
+// Получение текущей статистики работы движка (очередь, активные запросы)
 const stats = client.getStats();
-console.log({
-  cacheSize: stats.cacheSize, // Размер кэша
-  inflightRequests: stats.inflightRequests, // Активные запросы
-  queuedRequests: stats.queuedRequests, // Запросов в очереди
-  activeRequests: stats.activeRequests, // Выполняется сейчас
-  currentRateLimit: stats.currentRateLimit, // Использовано лимита
-});
+console.log(stats);
 
-// Работа с метриками
-const metrics = client.getMetrics("https://api.example.com/data");
-console.log(metrics); // Время выполнения, байты, ретраи, cache hits
+// Сбор всех накопленных метрик производительности
+const allMetrics = client.getAllMetrics();
+console.log(allMetrics);
 
-// Очистка кэша
-client.clearCache();
+// Очистить кэш ответов на лету
+await client.clearCache();
 
-// Очистка метрик
-client.clearMetrics();
+// Узнать имя текущего активного транспорта (например, UndiciTransport / BunTransport)
+const transportName = await client.getTransportName();
+console.log(`Используется транспорт: ${transportName}`);
 
-// Корректное завершение работы
+// Корректное фоновое закрытие клиента и освобождение ресурсов (Keep-Alive пулов)
 await client.destroy();
 ```
 
----
-
-## Fluent API через RequestBuilder
+### Работа со стримами (Streaming)
 
 ```typescript
-client
-  .request("https://api.example.com/data")
-  .get() // по умолчанию GET
-  .headers({ "X-Test": "123" })
-  .query({ page: 1 })
-  .json() // или .text(), .xml()
-  .send()
-  .then(console.log);
+// Возвращает HttpResponse с ReadableStream в качестве body и поддержкой метода .clone()
+const streamResponse = await client.stream(
+  "https://stream.example.com/audio.mp3",
+);
+const reader = streamResponse.body.getReader();
 ```
 
 ---
 
-## Компоненты архитектуры
+## 🏗️ Компоненты архитектуры плагинов
 
-### 💾 CacheManager
+`HyperClient` последовательно собирает пайплайн обработки запроса из следующих встроенных слоев:
 
-LRU-кэш с поддержкой TTL и метаданных (etag, lastModified):
-
-- Автоматически кэширует GET/HEAD запросы
-- Настраиваемый размер и время жизни
-- Методы: `get()`, `set()`, `getWithMetadata()`, `setWithMetadata()`
-
-### 📊 QueueManager
-
-Управление очередью запросов:
-
-- Контроль конкурентности (maxConcurrent)
-- FIFO обработка ожидующих запросов
-- Методы: `enqueue()`, `activeCount`, `queuedCount`
-
-### 🚦 RateLimiter
-
-Token bucket алгоритм с очередью ожидания:
-
-- Плавное ограничение скорости
-- FIFO ожидание при превышении лимита
-- Методы: `wait()`, `tryConsume()`, `remainingRequests`
-
-### 📈 MetricsManager
-
-Сбор и анализ метрик производительности:
-
-- Время выполнения запросов
-- Количество байт отправлено/получено
-- Cache hits/misses
-- Количество повторных попыток
+1. **withSerializer / withParser:** Отвечают за автоматическое приведение типов, сериализацию объектов при отправке
+   и интеллектуальный разбор ответов.
+2. **withCache:** Перехватывает повторные запросы, отдавая данные из локального кэша без выполнения сетевого вызова.
+3. **withInflight:** Объединяет идентичные параллельные запросы к одному эндпоинту, предотвращая состояние гонки.
+4. **withRateLimit & withQueue:** Упорядочивают вызовы, распределяют нагрузку и выстраивают запросы в FIFO-очередь
+   при превышении лимитов.
+5. **withInterceptors:** Обеспечивает глобальный перехват стадий жизненного цикла запроса и ответа.
+6. **withMetrics:** Контролирует сбор телеметрии выполнения сетевых операций в реальном времени.
 
 ---
 
-## Документация
+## 📄 Лицензия
 
-- [English](https://github.com/Dirold2/hyperttp/blob/main/README.md)
+MIT

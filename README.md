@@ -1,200 +1,186 @@
-# Hyperttp
+# Hyperttp ⚡
 
-Advanced HTTP client for Node.js with caching, rate limiting, request queuing,
-automatic retries, cookie management, and automatic JSON/XML parsing.
+[English](https://github.com/Dirold2/hyperttp) • [Русский](https://github.com/Dirold2/hyperttp/tree/main/lang/ru)
 
-## Features
+An advanced, high-performance HTTP client for Node.js and Bun featuring built-in caching, rate limiting,
+request queuing, inflight request deduplication, performance metrics, and a fluent chainable API.
+Built as a feature-rich, production-ready extension over the optimized `@hyperttp/core` engine.
 
-- Automatic request deduplication
-- LRU caching with TTL
-- Configurable rate limiting
-- Concurrent request management
-- Exponential backoff with jitter for retries
-- Cookie jar support
-- Automatic response parsing (JSON/XML/text/buffer)
-- Automatic handling of redirects
-- Fluent request builder API
+---
 
-## Installation
+## 🔥 Key Features
+
+- **🔀 Concurrency Management:** Built-in queue plugin (`withQueue`) to strictly enforce concurrent request limits.
+- **💾 Smart LRU Caching:** Dedicated caching layer (`withCache`) with TTL support to prevent redundant network drift.
+- **🚦 Rate Limiting:** Built-in Token Bucket algorithm to protect against external API blocks and rate limits.
+- **🛡️ Inflight Deduplication:** Prevents duplicate simultaneous requests to the same endpoint if the first is pending.
+- **📈 Real-Time Metrics:** Out-of-the-box telemetry tracking latencies, RPS, cache hits, and overall client health.
+- **🔌 Modular Architecture:** Clean pipeline approach allowing custom plugins, serialization layers, and interceptors.
+- **💎 Fluent Request Builder API:** Clean, chainable API syntax to compose and configure requests with ease.
+
+---
+
+## 🚀 Installation
 
 ```bash
 npm install hyperttp
+
 ```
 
 ---
 
-## 🚀 Simple Usage
+## 📦 Quick Start
 
-Get started in seconds — just import and make requests:
+Simply import `HyperClient` and start dispatched requests. Core features like caching, queue management,
+and rate limiting are instantly preconfigured and active out of the box.
 
 ```typescript
-import HttpClientImproved from "hyperttp";
+import { HyperClient } from "hyperttp";
 
-const client = new HttpClientImproved();
+const client = new HyperClient();
 
-// Simple GET request
-const data = await client.get("https://api.example.com/data");
+// Simple GET request (instantly resolves to the pre-parsed type-safe body)
+const data = await client.get<MyDataType>("https://api.example.com/data");
 
-// POST request with JSON body
-const postData = await client.post("https://api.example.com/items", {
-  name: "Item 1",
+// POST request specifying expected response type alongside body payload
+const newItem = await client.post("https://api.example.com/items", "json", {
+  name: "New Item Structure",
 });
 ```
-
-**That's it!** Caching, request queuing, and retries are enabled by default.
 
 ---
 
 ## ⚙️ Advanced Configuration
 
-Configure all components for your specific needs:
+Fine-tune every infrastructure layer by supplying a configuration object directly to the `HyperClient` constructor:
 
 ```typescript
-import HttpClientImproved from "hyperttp";
+import { HyperClient } from "hyperttp";
 
-const client = new HttpClientImproved({
-  // 🌐 Network settings
+const client = new HyperClient({
+  // 🌐 Core Network Level Settings (NetworkOptions)
   network: {
-    timeout: 10000, // Request timeout (ms)
-    maxConcurrent: 50, // Max concurrent requests
-    maxRedirects: 5, // Max redirects to follow
-    followRedirects: true, // Follow redirects automatically
-    userAgent: "MyApp/1.0", // User-Agent header
-    allowHttp2: true, // Enable HTTP/2
-    pipelining: 10, // Request pipelining
-    keepAliveTimeout: 30000, // Keep-alive timeout
-    rejectUnauthorized: false, // Skip SSL certificate validation
+    timeout: 10000, // Request timeout in milliseconds
+    maxConcurrent: 50, // Maximum simultaneous active sockets (0 = unlimited)
+    pipelining: 1, // Pipelined requests per connection limit
+    keepAliveTimeout: 30000, // Keep-alive socket preservation time in ms
+    rejectUnauthorized: true, // Reject untrusted or self-signed SSL certificates
+    followRedirects: true, // Automatically follow HTTP redirects
+    maxRedirects: 5, // Maximum follow threshold for redirects
+    maxResponseBytes: 10 * 1024 * 1024, // Prevents OOM by capping response body size (10 MB)
+    userAgent: "HyperClient/2.0", // Global fallback User-Agent header
+    headers: {
+      // Default baseline headers appended to every request
+      "X-App-Client": "Backend",
+    },
+    validateStatus: (status) => status >= 200 && status < 300, // Status success validation rules
   },
 
-  // 💾 Caching (LRU cache)
-  cache: {
-    enabled: true, // Enable caching
-    ttl: 1000 * 60 * 5, // Cache TTL (5 minutes)
-    maxSize: 500, // Max cache size (entries)
-  },
-
-  // 🚦 Rate Limiting (Token Bucket)
-  rateLimit: {
-    enabled: true, // Enable rate limiting
-    maxRequests: 100, // Max requests per window
-    windowMs: 60000, // Time window (ms)
-  },
-
-  // 📊 Request Queue
-  queue: {
-    enabled: true, // Enable request queue
-  },
-
-  // 🔄 Retry Logic
+  // 🔄 Automated Retry Logic (RetryOptions)
   retry: {
-    maxRetries: 3, // Max retry attempts
-    baseDelay: 1000, // Base delay between retries (ms)
-    maxDelay: 10000, // Max delay (ms)
-    jitter: true, // Add randomization to delays
-    retryStatusCodes: [408, 429, 500, 502, 503, 504],
+    maxRetries: 3, // Number of recovery attempts before failing
+    baseDelay: 1000, // Initial delay baseline between retries (ms)
+    maxDelay: 10000, // Maximum cap for retry delay intervals (ms)
+    retryStatusCodes: [408, 429, 502, 503, 504], // Target status codes that trigger a retry
+    jitter: true, // Randomized delay variations to avoid thundering herd crashes
   },
 
-  // 📈 Metrics
-  metrics: {
-    enabled: true, // Enable metrics collection
-    maxHistory: 1000, // Metrics history size
+  // 📈 Telemetry and Engine Logging
+  trackMetrics: true, // Enables global system performance collection
+  verbose: false, // Toggles internal micro-logs output
+  logger: (level, message, meta) => {
+    // Custom logging implementation sink
+    console.log(`[${level}] ${message}`, meta ?? "");
   },
 
-  // 🔍 Logging
-  verbose: true, // Enable verbose logging
-  logger: (level, msg) => console.log(`[${level}] ${msg}`),
+  // 🔌 Plugin Registration
+  plugins: [], // Inline custom plugin instances or absolute module paths
+
+  // 💾 Extended Plugin Configurations (Injected via HyperttpPluginsExtension)
+  cache: {
+    enabled: true,
+    ttl: 300000, // 5 minutes cache lifespan
+    maxSize: 500, // Max item limit for local LRU storage
+  },
+  rateLimit: {
+    enabled: true,
+    maxRequests: 100,
+    windowMs: 60000,
+  },
+  inflight: {
+    enabled: true,
+  },
 });
 ```
 
-### Using Advanced Features
+---
+
+## 🛠️ Advanced Features
+
+### Fluent Builder API
+
+Invoke the `.request(url)` chain to programmatically craft highly specific request structures on the fly:
 
 ```typescript
-// Using Fluent RequestBuilder
 const result = await client
   .request("https://api.example.com/search")
-  .query({ q: "hyperttp", limit: 10 })
+  .post() // Specify HTTP Method (Defaults to GET)
+  .query({ q: "hyperttp", p: 1 }) // Safely append and encode Query Parameters
   .headers({ Authorization: "Bearer TOKEN" })
-  .json()
+  .jsonBody({ activeOnly: true }) // Automatically serializes and sets Content-Type header
+  .json() // Asserts expected response format (.text(), .buffer(), .stream())
+  .timeout(5000) // Instantiates a contextual, request-scoped AbortSignal timeout
   .send();
+```
 
-// Get client statistics
+### Statistics, Cache, and Metrics Engine
+
+```typescript
+// Inspect pipeline internals (active connections, active queue payloads)
 const stats = client.getStats();
-console.log({
-  cacheSize: stats.cacheSize, // Current cache size
-  inflightRequests: stats.inflightRequests, // Active requests
-  queuedRequests: stats.queuedRequests, // Requests waiting in queue
-  activeRequests: stats.activeRequests, // Currently executing
-  currentRateLimit: stats.currentRateLimit, // Used rate limit slots
-});
+console.log(stats);
 
-// Work with metrics
-const metrics = client.getMetrics("https://api.example.com/data");
-console.log(metrics);
+// Retrieve aggregated historical latency and performance metrics
+const allMetrics = client.getAllMetrics();
+console.log(allMetrics);
 
-// Clear cache
-client.clearCache();
+// Flush the entire local response cache programmatically
+await client.clearCache();
 
-// Clear metrics
-client.clearMetrics();
+// Identify the execution context's current driving transport layout
+const transportName = await client.getTransportName();
+console.log(`Current Active Transport Driver: ${transportName}`);
 
-// Graceful shutdown
+// Gracefully teardown the client instance, draining keep-alive pools and sockets
 await client.destroy();
 ```
 
----
-
-## Fluent Builder API
+### Stream Handlers
 
 ```typescript
-client
-  .request("https://api.example.com/data")
-  .get() // default
-  .headers({ "X-Test": "123" })
-  .query({ page: 1 })
-  .json() // or .text(), .xml()
-  .send()
-  .then(console.log);
+// Returns an HttpResponse interface carrying a custom ReadableStream with clone() support
+const streamResponse = await client.stream(
+  "https://stream.example.com/audio.mp3",
+);
+const reader = streamResponse.body.getReader();
 ```
 
 ---
 
-## Architecture Components
+## 🏗️ Architecture Pipeline
 
-### 💾 CacheManager
+`HyperClient` structures outbound and inbound requests across a sequential pipeline composed of granular plugins:
 
-LRU cache with TTL and metadata support (etag, lastModified):
-
-- Automatically caches GET/HEAD responses
-- Configurable size and TTL
-- Methods: `get()`, `set()`, `getWithMetadata()`, `setWithMetadata()`
-
-### 📊 QueueManager
-
-Request queue management:
-
-- Concurrency control (maxConcurrent)
-- FIFO processing of pending requests
-- Methods: `enqueue()`, `activeCount`, `queuedCount`
-
-### 🚦 RateLimiter
-
-Token bucket algorithm with wait queue:
-
-- Smooth rate limiting
-- FIFO waiting when limit exceeded
-- Methods: `wait()`, `tryConsume()`, `remainingRequests`
-
-### 📈 MetricsManager
-
-Performance metrics collection and analysis:
-
-- Request timing
-- Bytes sent/received
-- Cache hits/misses
-- Retry counts
+1. **withSerializer / withParser:** Manages automated runtime type transformations, payload normalization, and safe serialization.
+2. **withCache:** Intercepts identical outgoing target operations, returning data directly from the LRU cache when matching.
+3. **withInflight:** Identifies matching parallel operations and merges them into a single flight path, avoiding race conditions.
+4. **withRateLimit & withQueue:** Sorts requests into a coordinated FIFO pattern,
+enforcing strict window boundaries and capacity bounds.
+5. **withInterceptors:** Exposes direct developer lifecycle hooks to capture requests and responses before execution steps.
+6. **withMetrics:** Records execution metrics across the entire lifecycle to offer real-time health telemetry.
 
 ---
 
-## Documentation
+## 📄 License
 
-- [Русский](https://github.com/Dirold2/hyperttp/blob/main/lang/ru/README.md)
+MIT

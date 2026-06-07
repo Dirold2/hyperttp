@@ -83,12 +83,20 @@ export class HyperClient {
     client.use(withParser(this._config.responseConverter));
     client.use(withQueue());
     client.use(withRateLimit(this._config.rateLimit));
-    client.use(withInflight());
-    client.use(withCache());
+    client.use(withInflight(this._config.inflight));
+    client.use(withCache(this._config.cache));
     client.use(withInterceptors());
-    client.use(withMetrics());
+    client.use(withMetrics(this._config.metrics));
 
     this._engine = client;
+  }
+
+  /**
+   * @ru Возвращает текущий транспортный экземпляр (или null, если он ещё не инициализирован).
+   * @en Returns the current transport instance (or null if not yet initialized).
+   */
+  public async getTransportName(): Promise<string> {
+    return this._engine.getTransportName();
   }
 
   private wrapRequest(
@@ -98,23 +106,17 @@ export class HyperClient {
   ): RequestInterface {
     const r = req as RequestLike;
 
-    if (r.meta && r.meta.responseType === responseType && r.signal === signal) {
-      const body = r.body ?? r.bodyData ?? r._bodyData;
-      if (body !== undefined) {
-        r.body = body;
-      }
-      return req;
-    }
-
-    const wrapped: RequestInterface = {
+    return {
       url: r.url,
       headers: r.headers ?? EMPTY_HEADERS,
       signal: signal ?? r.signal,
       body: r.body ?? r.bodyData ?? r._bodyData,
-      meta: r.meta ? { ...r.meta, responseType } : { responseType },
+      query: r.query,
+      meta: {
+        ...r.meta,
+        responseType,
+      },
     };
-
-    return wrapped;
   }
 
   private extractBody(
@@ -159,7 +161,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise with the response body (type depends on responseType).
    */
-  public get<T>(
+  public async get<T>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
@@ -183,7 +185,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise with the response body.
    */
-  public post<T = unknown>(
+  public async post<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     body?: RequestBodyData,
@@ -210,7 +212,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise with the response body.
    */
-  public put<T = unknown>(
+  public async put<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     body?: RequestBodyData,
@@ -237,7 +239,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise with the response body.
    */
-  public patch<T = unknown>(
+  public async patch<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     body?: RequestBodyData,
@@ -264,7 +266,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise with the response body.
    */
-  public options<T = unknown>(
+  public async options<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     body?: RequestBodyData,
@@ -290,7 +292,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise with the response body.
    */
-  public delete<T = unknown>(
+  public async delete<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
@@ -313,7 +315,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise with status and headers.
    */
-  public head(
+  public async head(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
@@ -335,7 +337,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise with HTTP response containing a readable stream body.
    */
-  public stream(
+  public async stream(
     req: RequestInterface | string,
     signal?: AbortSignal,
   ): Promise<HttpResponse<StreamResponseBody>> {
