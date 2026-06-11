@@ -9,6 +9,7 @@ import type {
   Method,
   IHyperCore,
   RequestMetrics,
+  HyperTransport,
 } from "@hyperttp/types";
 import { defaultConfig } from "../defaultConfig.js";
 import { HyperCore } from "@hyperttp/core";
@@ -53,13 +54,13 @@ export class HyperClient {
    * @en Creates a HyperClient instance and registers all standard plugins.
    * @param config - Client configuration options.
    */
-  constructor(config: HttpClientOptions = defaultConfig) {
+  constructor(config: HttpClientOptions = defaultConfig, transport?: HyperTransport) {
     this._config = {
       ...defaultConfig,
       ...config,
       network: { ...defaultConfig.network, ...config.network },
     };
-    this._engine = new HyperCore(this._config);
+    this._engine = new HyperCore(this._config, transport);
 
     this._engine.use(withSerializer());
     this._engine.use(withParser(this._config.responseConverter));
