@@ -1,7 +1,4 @@
-import type {
-  UrlExtractorInterface,
-  UrlPattern,
-} from "../Types/url-extractor.js";
+import type { UrlExtractorInterface, UrlPattern } from "../Types/url-extractor.js";
 
 /**
  * Universal URL Extractor
@@ -69,18 +66,14 @@ export default class UrlExtractor implements UrlExtractorInterface {
    * @throws Will throw if the URL does not match the pattern or required groups are missing
    * @returns Object with extracted group values
    */
-  private extractGroups<T extends string>(
-    url: string,
-    pattern: UrlPattern<T>,
-  ): Record<T, string> {
+  private extractGroups<T extends string>(url: string, pattern: UrlPattern<T>): Record<T, string> {
     const match = url.match(pattern.regex)?.groups;
     if (!match) throw new Error(`Invalid ${pattern.entity} URL: ${url}`);
 
     return pattern.groupNames.reduce(
       (acc, name) => {
         const value = match[name];
-        if (!value)
-          throw new Error(`Missing "${name}" in ${pattern.entity} URL: ${url}`);
+        if (!value) throw new Error(`Missing "${name}" in ${pattern.entity} URL: ${url}`);
         acc[name] = value;
         return acc;
       },
@@ -114,13 +107,9 @@ export default class UrlExtractor implements UrlExtractorInterface {
     platform: string,
     castNumbers = true,
   ): Record<string, T> {
-    const patterns = this.patterns[platform]?.filter(
-      (p) => p.entity === entity,
-    );
+    const patterns = this.patterns[platform]?.filter((p) => p.entity === entity);
     if (!patterns?.length)
-      throw new Error(
-        `No patterns registered for "${entity}" on platform "${platform}"`,
-      );
+      throw new Error(`No patterns registered for "${entity}" on platform "${platform}"`);
 
     for (const pattern of patterns) {
       try {

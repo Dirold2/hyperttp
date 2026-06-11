@@ -1,0 +1,29 @@
+{
+  "rules": {
+    "typescript/no-explicit-any": "warn",
+    "no-console": "off",
+    "no-unused-vars": "error",
+    "no-debugger": "error",
+    "no-duplicate-imports": "error",
+    "no-unreachable": "error",
+    "eqeqeq": "error",
+    "no-var": "error",
+    "prefer-const": "warn"
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "pedantic": "off",
+    "perf": "warn",
+    "style": "warn",
+    "nursery": "off"
+  },
+  "ignorePatterns": [
+    "dist",
+    "node_modules",
+    "coverage",
+    "*.d.ts",
+    "example",
+    "tests"
+  ]
+}

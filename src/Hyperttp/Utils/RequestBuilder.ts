@@ -1,4 +1,4 @@
-import type { Method, RequestInterface, ResponseType } from "@hyperttp/types";
+import type { Method, RequestInterface, ResponseType, RequestQuery } from "@hyperttp/types";
 import { HyperClient } from "../Client/HyperClient.js";
 
 /**
@@ -13,7 +13,7 @@ export class RequestBuilder {
   private _responseType: ResponseType = "json";
   private _client: HyperClient;
   private _signal?: AbortSignal;
-  private _queryParams?: Record<string, string | number | boolean>;
+  private _queryParams: RequestQuery = {};
 
   /**
    * @ru Создаёт экземпляр построителя запросов.
@@ -24,6 +24,17 @@ export class RequestBuilder {
   constructor(url: string, client: HyperClient) {
     this._url = url;
     this._client = client;
+  }
+
+  /**
+   * @ru Устанавливает HTTP метод.
+   * @en Sets the HTTP method.
+   * @param method - HTTP method (GET, POST, etc.).
+   * @returns This builder instance for chaining.
+   */
+  method(method: Method): this {
+    this._method = method;
+    return this;
   }
 
   /**
@@ -54,7 +65,7 @@ export class RequestBuilder {
    * @param body - JSON-serializable body.
    * @returns This builder instance for chaining.
    */
-  jsonBody<B>(body: B): this {
+  jsonBody(body: unknown): this {
     this._body = body;
     this._headers["Content-Type"] = "application/json; charset=utf-8";
     return this;
@@ -66,16 +77,8 @@ export class RequestBuilder {
    * @param params - Object with query parameters (keys and values).
    * @returns This builder instance for chaining.
    */
-  query(params: Record<string, string | number | boolean>): this {
-    if (!this._queryParams) {
-      this._queryParams = {};
-    }
-
-    for (const key in params) {
-      if (Object.prototype.hasOwnProperty.call(params, key)) {
-        this._queryParams[key] = params[key]!;
-      }
-    }
+  query(params: RequestQuery): this {
+    Object.assign(this._queryParams, params);
     return this;
   }
 
@@ -170,12 +173,22 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает ожидаемый тип ответа в XML (как текст).
-   * @en Sets expected response type to XML (as text).
+   * @ru Устанавливает ожидаемый тип ответа в XML.
+   * @en Sets expected response type to XML.
    * @returns This builder instance for chaining.
    */
   xml(): this {
-    this._responseType = "xml" as ResponseType;
+    this._responseType = "xml";
+    return this;
+  }
+
+  /**
+   * @ru Устанавливает ожидаемый тип ответа в HTML.
+   * @en Sets expected response type to HTML.
+   * @returns This builder instance for chaining.
+   */
+  html(): this {
+    this._responseType = "html";
     return this;
   }
 
@@ -222,6 +235,22 @@ export class RequestBuilder {
   }
 
   /**
+   * @ru Создаёт копию текущего builder'а.
+   * @en Creates a clone of the current builder.
+   * @returns New RequestBuilder instance with the same configuration.
+   */
+  clone(): RequestBuilder {
+    const cloned = new RequestBuilder(this._url, this._client);
+    cloned._method = this._method;
+    cloned._headers = { ...this._headers };
+    cloned._body = this._body;
+    cloned._responseType = this._responseType;
+    cloned._signal = this._signal;
+    cloned._queryParams = { ...this._queryParams };
+    return cloned;
+  }
+
+  /**
    * @ru Формирует объект запроса RequestInterface из текущих настроек.
    * @en Builds a RequestInterface object from current settings.
    * @returns RequestInterface ready for dispatching.
@@ -229,13 +258,19 @@ export class RequestBuilder {
   private toRequest(): RequestInterface {
     let finalUrl = this._url;
 
-    if (this._queryParams) {
+    if (Object.keys(this._queryParams).length > 0) {
       const urlObj = new URL(this._url);
-      const qp = this._queryParams;
-
-      for (const k in qp) {
-        if (Object.prototype.hasOwnProperty.call(qp, k)) {
-          urlObj.searchParams.set(k, String(qp[k]));
+      for (const k in this._queryParams) {
+        if (Object.prototype.hasOwnProperty.call(this._queryParams, k)) {
+          const v = this._queryParams[k];
+          if (v == null) continue;
+          if (Array.isArray(v)) {
+            for (const item of v) {
+              if (item != null) urlObj.searchParams.append(k, String(item));
+            }
+          } else {
+            urlObj.searchParams.set(k, String(v));
+          }
         }
       }
       finalUrl = urlObj.toString();
@@ -253,9 +288,10 @@ export class RequestBuilder {
   /**
    * @ru Выполняет запрос с текущими настройками и возвращает Promise с результатом.
    * @en Executes the request with current settings and returns a Promise with the result.
+   * @template T - Expected response type.
    * @returns Promise resolving to the response (type depends on responseType).
    */
-  send<T = any>(): Promise<T> {
+  send<T = unknown>(): Promise<T> {
     const req = this.toRequest();
     const responseType = this._responseType;
     const signal = this._signal;
@@ -263,6 +299,12 @@ export class RequestBuilder {
     if (responseType === "stream") {
       return this._client.stream(req, signal) as Promise<T>;
     }
+
+    if (this._method === "HEAD") {
+      return this._client.head(req, signal) as unknown as Promise<T>;
+    }
+
+    const hasBody = ["POST", "PUT", "PATCH", "OPTIONS"].includes(this._method);
 
     switch (this._method) {
       case "GET":
@@ -276,13 +318,7 @@ export class RequestBuilder {
       case "DELETE":
         return this._client.delete<T>(req, responseType, signal);
       case "OPTIONS":
-        return this._client.options<T>(req, responseType, this._body, signal);
-      case "HEAD":
-        return this._client.head(
-          req,
-          responseType,
-          signal,
-        ) as unknown as Promise<T>;
+        return this._client.options<T>(req, responseType, hasBody ? this._body : undefined, signal);
       default:
         return this._client.get<T>(req, responseType, signal);
     }

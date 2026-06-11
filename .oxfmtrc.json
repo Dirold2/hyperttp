@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "indentWidth": 2,
+  "lineWidth": 100,
+  "useTabs": false,
+  "quoteStyle": "double",
+  "quoteProperties": "asNeeded",
+  "semicolons": "always",
+  "trailingCommas": "all",
+  "arrowParentheses": "always",
+  "ignorePatterns": ["dist", "node_modules", "coverage", "*.d.ts"]
+}

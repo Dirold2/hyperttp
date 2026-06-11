@@ -1,4 +1,5 @@
 import type {
+  Method,
   RequestBodyData,
   RequestConfig,
   RequestHeaders,
@@ -18,7 +19,7 @@ export default class Request implements RequestInterface {
   private _headers: RequestHeaders;
   private _bodyData: RequestBodyData;
   private _signal?: AbortSignal;
-  private method: string = "GET";
+  public method: Method = "GET";
   private bodyType: "json" | "form" = "json";
   private _meta: any = {};
   public query: RequestQuery;
@@ -102,8 +103,7 @@ export default class Request implements RequestInterface {
     const url = new URL(`${this.scheme}://${targetHost}`);
     url.port = this.port.toString();
 
-    const finalPath =
-      prefixPath + (this.path.startsWith("/") ? this.path : `/${this.path}`);
+    const finalPath = prefixPath + (this.path.startsWith("/") ? this.path : `/${this.path}`);
     url.pathname = finalPath.replace(/\/+/g, "/");
 
     for (const [key, value] of Object.entries(this.query)) {
@@ -312,7 +312,7 @@ export default class Request implements RequestInterface {
    * @param method - HTTP method (e.g., 'GET', 'POST').
    * @returns This request instance for chaining.
    */
-  setMethod(method: string): this {
+  setMethod(method: Method): this {
     this.method = method;
     return this;
   }
@@ -377,9 +377,7 @@ export default class Request implements RequestInterface {
       path: this.path || "",
       headers: { ...this._headers },
       query: { ...this.query },
-      bodyData: this.isPlainObject(this._bodyData)
-        ? { ...this._bodyData }
-        : this._bodyData,
+      bodyData: this.isPlainObject(this._bodyData) ? { ...this._bodyData } : this._bodyData,
       meta: { ...this._meta },
     })
       .setMethod(this.method)

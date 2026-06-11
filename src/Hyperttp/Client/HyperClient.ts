@@ -4,428 +4,448 @@ import type {
   HttpClientOptions,
   RequestBodyData,
   RequestInterface,
+  RequestHeaders,
+  HyperPlugin,
+  Method,
+  IHyperCore,
+  RequestMetrics,
 } from "@hyperttp/types";
-
-import { HyperCore } from "@hyperttp/core";
-import { RequestBuilder } from "../Utils/RequestBuilder.js";
 import { defaultConfig } from "../defaultConfig.js";
-
+import { HyperCore } from "@hyperttp/core";
+import { withParser } from "@hyperttp/parser";
 import { withSerializer } from "@hyperttp/serializer";
 import { withQueue } from "@hyperttp/queue";
+import { withCache } from "@hyperttp/cache";
 import { withRateLimit } from "@hyperttp/ratelimit";
 import { withInflight } from "@hyperttp/inflight";
-import { withCache } from "@hyperttp/cache";
 import { withInterceptors } from "@hyperttp/interceptors";
 import { withMetrics } from "@hyperttp/metrics";
-import { withParser } from "@hyperttp/parser";
-
-declare module "@hyperttp/core" {
-  interface HyperCore {
-    getStats?: () => Record<string, unknown>;
-    clearCache?: () => void | Promise<void>;
-    getAllMetrics?: () => Record<string, unknown>;
-    getMetrics?: (key: string) => unknown;
-  }
-}
-
-type StreamResponseBody = ReadableStream<Uint8Array> & {
-  dump?: () => Promise<void>;
-};
 
 const EMPTY_HEADERS: Readonly<Record<string, never>> = Object.freeze({});
-
-function streamCloneHandler(
-  this: HttpResponse<StreamResponseBody>,
-): HttpResponse<StreamResponseBody> {
-  return {
-    status: this.status,
-    headers: this.headers,
-    body: this.body,
-    url: this.url,
-    clone: streamCloneHandler,
-  };
-}
 
 type RequestLike = RequestInterface & {
   body?: RequestBodyData;
   bodyData?: RequestBodyData;
   _bodyData?: RequestBodyData;
-  query?: Record<string, unknown>;
-  url?: string;
+  getURL?: () => string;
+  getHeaders?: () => RequestHeaders;
+  getBodyData?: () => RequestBodyData;
+  getBodyDataString?: () => string;
+  getSignal?: () => AbortSignal | undefined;
+  getQuery?: () => Record<string, unknown>;
+  getQueryAsString?: () => string;
 };
 
 /**
- * @ru Основной клиент для выполнения HTTP-запросов с поддержкой плагинов (сериализация, кэширование, очередь, rate limit, метрики, парсинг, перехватчики).
- * @en Main HTTP client supporting plugins (serialization, caching, queue, rate limiting, metrics, parsing, interceptors).
+ * @ru Высокоуровневый HTTP-клиент с автоматической регистрацией плагинов
+ * (сериализация, парсинг, очередь, rate limit, inflight, кэш, перехватчики, метрики).
+ * Делегирует выполнение запросов ядру HyperCore и извлекает тело ответа.
+ * @en High-level HTTP client with automatic plugin registration
+ * (serialization, parsing, queue, rate limit, inflight, cache, interceptors, metrics).
+ * Delegates request execution to the HyperCore core and extracts the response body.
  */
 export class HyperClient {
   private readonly _engine: HyperCore;
   private readonly _config: HttpClientOptions;
 
   /**
-   * @ru Создаёт экземпляр HyperClient с расширенными возможностями.
-   * @en Creates a HyperClient instance with enhanced capabilities.
-   * @param config - Client configuration (base URL, timeouts, network, logger, etc.).
+   * @ru Создаёт экземпляр HyperClient и регистрирует все стандартные плагины.
+   * @en Creates a HyperClient instance and registers all standard plugins.
+   * @param config - Client configuration options.
    */
   constructor(config: HttpClientOptions = defaultConfig) {
     this._config = {
       ...defaultConfig,
       ...config,
-      network: config.network
-        ? { ...defaultConfig.network, ...config.network }
-        : defaultConfig.network,
-      logger: config.logger ?? (() => {}),
+      network: { ...defaultConfig.network, ...config.network },
     };
+    this._engine = new HyperCore(this._config);
 
-    const client = new HyperCore(this._config);
-
-    client.use(withSerializer());
-    client.use(withParser(this._config.responseConverter));
-    client.use(withQueue());
-    client.use(withRateLimit(this._config.rateLimit));
-    client.use(withInflight(this._config.inflight));
-    client.use(withCache(this._config.cache));
-    client.use(withInterceptors());
-    client.use(withMetrics(this._config.metrics));
-
-    this._engine = client;
+    this._engine.use(withSerializer());
+    this._engine.use(withParser(this._config.responseConverter));
+    this._engine.use(withQueue());
+    this._engine.use(withRateLimit(this._config.rateLimit));
+    this._engine.use(withInflight(this._config.inflight));
+    this._engine.use(withCache(this._config.cache));
+    this._engine.use(withInterceptors());
+    this._engine.use(withMetrics(this._config.metrics));
   }
 
   /**
-   * @ru Возвращает текущий транспортный экземпляр (или null, если он ещё не инициализирован).
-   * @en Returns the current transport instance (or null if not yet initialized).
+   * @ru Регистрирует дополнительный плагин в клиенте.
+   * @en Registers an additional plugin in the client.
+   * @param plugin - Plugin instance to register.
+   * @returns The current instance for chaining.
+   */
+  public use(plugin: HyperPlugin): this {
+    this._engine.use(plugin);
+    return this;
+  }
+
+  /**
+   * @ru Возвращает имя класса активного транспорта.
+   * @en Returns the class name of the active transport.
+   * @returns Promise resolving to the transport class name.
    */
   public async getTransportName(): Promise<string> {
     return this._engine.getTransportName();
   }
 
-  private wrapRequest(
-    req: RequestInterface,
+  /**
+   * @ru Строит RequestInterface, правильно извлекая данные из геттеров старого класса Request.
+   * @en Builds RequestInterface, correctly extracting data from getters of the old Request class.
+   * @param req - Request URL or configuration object.
+   * @param responseType - Response parsing strategy.
+   * @param body - Optional request body.
+   * @param signal - Optional abort signal.
+   * @returns Normalized RequestInterface ready for dispatching.
+   */
+  private _buildRequest(
+    req: RequestInterface | string,
     responseType: ResponseType,
+    body?: RequestBodyData,
     signal?: AbortSignal,
   ): RequestInterface {
+    if (typeof req === "string") {
+      return {
+        url: req,
+        headers: EMPTY_HEADERS,
+        body,
+        signal,
+        meta: { responseType },
+      };
+    }
     const r = req as RequestLike;
+    const url = req.url ?? r.getURL?.() ?? "";
+    const headers = req.headers ?? r.getHeaders?.() ?? EMPTY_HEADERS;
+    const extractedBody =
+      body ?? r.body ?? r.bodyData ?? r._bodyData ?? r.getBodyData?.() ?? r.getBodyDataString?.();
+
+    const extractedSignal = signal ?? req.signal ?? r.getSignal?.();
+
+    let finalUrl = url;
+    const query = req.query ?? r.getQuery?.();
+    if (query && Object.keys(query).length > 0) {
+      try {
+        const urlObj = new URL(finalUrl);
+        for (const k in query) {
+          if (Object.prototype.hasOwnProperty.call(query, k)) {
+            const v = query[k];
+            if (v == null) continue;
+            if (Array.isArray(v)) {
+              for (const item of v) {
+                if (item != null) urlObj.searchParams.append(k, String(item));
+              }
+            } else {
+              urlObj.searchParams.set(k, String(v));
+            }
+          }
+        }
+        finalUrl = urlObj.toString();
+      } catch {
+        const qs = r.getQueryAsString?.();
+        if (qs) finalUrl += qs;
+      }
+    } else {
+      const qs = r.getQueryAsString?.();
+      if (qs) finalUrl += qs;
+    }
 
     return {
-      url: r.url,
-      headers: r.headers ?? EMPTY_HEADERS,
-      signal: signal ?? r.signal,
-      body: r.body ?? r.bodyData ?? r._bodyData,
-      query: r.query,
-      meta: {
-        ...r.meta,
-        responseType,
-      },
-    };
-  }
-
-  private extractBody(
-    req: RequestInterface | string,
-  ): RequestBodyData | undefined {
-    if (typeof req === "string") return undefined;
-    const r = req as RequestLike;
-    return r.body ?? r.bodyData ?? r._bodyData;
-  }
-
-  private static extractBodyFromResponse(res: HttpResponse<any>): any {
-    return res.body;
-  }
-
-  private static formatHeadResponse(res: HttpResponse<any>) {
-    return {
-      status: res.status,
-      headers: res.headers as Record<string, string | string[]>,
-    };
-  }
-
-  private static formatStreamResponse(res: {
-    status: number;
-    headers: any;
-    body: any;
-    url?: string;
-  }) {
-    return {
-      status: res.status,
-      headers: res.headers,
-      body: res.body as StreamResponseBody,
-      url: res.url,
-      clone: streamCloneHandler,
+      url: finalUrl,
+      headers,
+      body: extractedBody,
+      signal: extractedSignal,
+      meta: { ...req.meta, responseType },
     };
   }
 
   /**
-   * @ru Выполняет GET-запрос и возвращает распарсенный ответ (тело ответа).
-   * @en Performs a GET request and returns the parsed response body.
-   * @param req - Request URL or RequestInterface object.
-   * @param responseType - Desired response type ('auto', 'json', 'text', 'stream', 'buffer').
+   * @ru Выполняет HTTP-запрос через ядро и возвращает распарсенное тело ответа.
+   * Плагин withParser автоматически парсит тело на основе meta.responseType.
+   * @en Executes an HTTP request through the core and returns the parsed response body.
+   * The withParser plugin automatically parses the body based on meta.responseType.
+   * @template T - Expected response body type.
+   * @param method - HTTP method (GET, POST, etc.).
+   * @param req - Request URL or configuration object.
+   * @param responseType - Response parsing strategy.
+   * @param body - Optional request body.
    * @param signal - Optional abort signal.
-   * @returns Promise with the response body (type depends on responseType).
+   * @returns Promise resolving to the parsed response body.
    */
-  public async get<T>(
-    req: RequestInterface | string,
-    responseType: ResponseType = "auto",
-    signal?: AbortSignal,
-  ): Promise<T> {
-    return this._engine
-      .get<T>(
-        typeof req === "string"
-          ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
-          : this.wrapRequest(req, responseType, signal),
-        signal,
-      )
-      .then(HyperClient.extractBodyFromResponse);
-  }
-
-  /**
-   * @ru Выполняет POST-запрос и возвращает распарсенный ответ (тело ответа).
-   * @en Performs a POST request and returns the parsed response body.
-   * @param req - Request URL or RequestInterface object.
-   * @param responseType - Desired response type ('auto', 'json', 'text', 'stream', 'buffer').
-   * @param body - Request body data (overrides body from req).
-   * @param signal - Optional abort signal.
-   * @returns Promise with the response body.
-   */
-  public async post<T = unknown>(
+  private async _execute<T>(
+    method: Method,
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     body?: RequestBodyData,
     signal?: AbortSignal,
   ): Promise<T> {
-    const finalBody = body ?? this.extractBody(req);
-    return this._engine
-      .post<T>(
-        typeof req === "string"
-          ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
-          : this.wrapRequest(req, responseType, signal),
-        finalBody,
-        signal,
-      )
-      .then(HyperClient.extractBodyFromResponse);
+    const request = this._buildRequest(req, responseType, body, signal);
+
+    let response: HttpResponse<unknown>;
+    switch (method) {
+      case "GET":
+        response = await this._engine.get(request, signal);
+        break;
+      case "POST":
+        response = await this._engine.post(request, request.body, signal);
+        break;
+      case "PUT":
+        response = await this._engine.put(request, request.body, signal);
+        break;
+      case "PATCH":
+        response = await this._engine.patch(request, request.body, signal);
+        break;
+      case "DELETE":
+        response = await this._engine.delete(request, signal);
+        break;
+      case "OPTIONS":
+        response = await this._engine.options(request, request.body, signal);
+        break;
+      case "HEAD":
+        response = await this._engine.head(request, signal);
+        break;
+      default:
+        response = await this._engine.get(request, signal);
+    }
+
+    return response.body as T;
   }
 
   /**
-   * @ru Выполняет PUT-запрос и возвращает распарсенный ответ (тело ответа).
-   * @en Performs a PUT request and returns the parsed response body.
-   * @param req - Request URL or RequestInterface object.
-   * @param responseType - Desired response type ('auto', 'json', 'text', 'stream', 'buffer').
-   * @param body - Request body data (overrides body from req).
+   * @ru Выполняет GET-запрос и возвращает распарсенный ответ.
+   * @en Performs a GET request and returns the parsed response.
+   * @template T - Expected response body type.
+   * @param req - Request URL or configuration object.
+   * @param responseType - Response parsing strategy ('auto', 'json', 'text', 'stream', 'buffer', 'blob', 'xml', 'html').
    * @param signal - Optional abort signal.
-   * @returns Promise with the response body.
+   * @returns Promise resolving to the parsed response body.
    */
-  public async put<T = unknown>(
+  public get<T = unknown>(
+    req: RequestInterface | string,
+    responseType: ResponseType = "auto",
+    signal?: AbortSignal,
+  ): Promise<T> {
+    return this._execute<T>("GET", req, responseType, undefined, signal);
+  }
+
+  /**
+   * @ru Выполняет POST-запрос и возвращает распарсенный ответ.
+   * @en Performs a POST request and returns the parsed response.
+   * @template T - Expected response body type.
+   * @param req - Request URL or configuration object.
+   * @param responseType - Response parsing strategy.
+   * @param body - Request body data.
+   * @param signal - Optional abort signal.
+   * @returns Promise resolving to the parsed response body.
+   */
+  public post<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     body?: RequestBodyData,
     signal?: AbortSignal,
   ): Promise<T> {
-    const finalBody = body ?? this.extractBody(req);
-    return this._engine
-      .put<T>(
-        typeof req === "string"
-          ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
-          : this.wrapRequest(req, responseType, signal),
-        finalBody,
-        signal,
-      )
-      .then(HyperClient.extractBodyFromResponse);
+    return this._execute<T>("POST", req, responseType, body, signal);
   }
 
   /**
-   * @ru Выполняет PATCH-запрос и возвращает распарсенный ответ (тело ответа).
-   * @en Performs a PATCH request and returns the parsed response body.
-   * @param req - Request URL or RequestInterface object.
-   * @param responseType - Desired response type ('auto', 'json', 'text', 'stream', 'buffer').
-   * @param body - Request body data (overrides body from req).
+   * @ru Выполняет PUT-запрос и возвращает распарсенный ответ.
+   * @en Performs a PUT request and returns the parsed response.
+   * @template T - Expected response body type.
+   * @param req - Request URL or configuration object.
+   * @param responseType - Response parsing strategy.
+   * @param body - Request body data.
    * @param signal - Optional abort signal.
-   * @returns Promise with the response body.
+   * @returns Promise resolving to the parsed response body.
    */
-  public async patch<T = unknown>(
+  public put<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     body?: RequestBodyData,
     signal?: AbortSignal,
   ): Promise<T> {
-    const finalBody = body ?? this.extractBody(req);
-    return this._engine
-      .patch<T>(
-        typeof req === "string"
-          ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
-          : this.wrapRequest(req, responseType, signal),
-        finalBody,
-        signal,
-      )
-      .then(HyperClient.extractBodyFromResponse);
+    return this._execute<T>("PUT", req, responseType, body, signal);
   }
 
   /**
-   * @ru Выполняет OPTIONS-запрос и возвращает распарсенный ответ (тело ответа).
-   * @en Performs an OPTIONS request and returns the parsed response body.
-   * @param req - Request URL or RequestInterface object.
-   * @param responseType - Desired response type ('auto', 'json', 'text', 'stream', 'buffer').
-   * @param body - Request body data (overrides body from req).
+   * @ru Выполняет PATCH-запрос и возвращает распарсенный ответ.
+   * @en Performs a PATCH request and returns the parsed response.
+   * @template T - Expected response body type.
+   * @param req - Request URL or configuration object.
+   * @param responseType - Response parsing strategy.
+   * @param body - Request body data.
    * @param signal - Optional abort signal.
-   * @returns Promise with the response body.
+   * @returns Promise resolving to the parsed response body.
    */
-  public async options<T = unknown>(
+  public patch<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     body?: RequestBodyData,
     signal?: AbortSignal,
   ): Promise<T> {
-    const finalBody = body ?? this.extractBody(req);
-    return this._engine
-      .options<T>(
-        typeof req === "string"
-          ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
-          : this.wrapRequest(req, responseType, signal),
-        finalBody,
-        signal,
-      )
-      .then(HyperClient.extractBodyFromResponse);
+    return this._execute<T>("PATCH", req, responseType, body, signal);
   }
 
   /**
-   * @ru Выполняет DELETE-запрос и возвращает распарсенный ответ (тело ответа).
-   * @en Performs a DELETE request and returns the parsed response body.
-   * @param req - Request URL or RequestInterface object.
-   * @param responseType - Desired response type ('auto', 'json', 'text', 'stream', 'buffer').
+   * @ru Выполняет DELETE-запрос и возвращает распарсенный ответ.
+   * @en Performs a DELETE request and returns the parsed response.
+   * @template T - Expected response body type.
+   * @param req - Request URL or configuration object.
+   * @param responseType - Response parsing strategy.
    * @param signal - Optional abort signal.
-   * @returns Promise with the response body.
+   * @returns Promise resolving to the parsed response body.
    */
-  public async delete<T = unknown>(
+  public delete<T = unknown>(
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<T> {
-    return this._engine
-      .delete<T>(
-        typeof req === "string"
-          ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
-          : this.wrapRequest(req, responseType, signal),
-        signal,
-      )
-      .then(HyperClient.extractBodyFromResponse);
+    return this._execute<T>("DELETE", req, responseType, undefined, signal);
+  }
+
+  /**
+   * @ru Выполняет OPTIONS-запрос и возвращает распарсенный ответ.
+   * @en Performs an OPTIONS request and returns the parsed response.
+   * @template T - Expected response body type.
+   * @param req - Request URL or configuration object.
+   * @param responseType - Response parsing strategy.
+   * @param body - Optional request body data.
+   * @param signal - Optional abort signal.
+   * @returns Promise resolving to the parsed response body.
+   */
+  public options<T = unknown>(
+    req: RequestInterface | string,
+    responseType: ResponseType = "auto",
+    body?: RequestBodyData,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    return this._execute<T>("OPTIONS", req, responseType, body, signal);
   }
 
   /**
    * @ru Выполняет HEAD-запрос и возвращает статус и заголовки (без тела).
    * @en Performs a HEAD request and returns status and headers (no body).
-   * @param req - Request URL or RequestInterface object.
-   * @param responseType - Desired response type (ignored for HEAD, but kept for consistency).
+   * @param req - Request URL or configuration object.
    * @param signal - Optional abort signal.
-   * @returns Promise with status and headers.
+   * @returns Promise resolving to an object with status and headers.
    */
   public async head(
     req: RequestInterface | string,
-    responseType: ResponseType = "auto",
     signal?: AbortSignal,
   ): Promise<{ status: number; headers: Record<string, string | string[]> }> {
-    return this._engine
-      .head(
-        typeof req === "string"
-          ? { url: req, headers: EMPTY_HEADERS, signal, meta: { responseType } }
-          : this.wrapRequest(req, responseType, signal),
-        signal,
-      )
-      .then(HyperClient.formatHeadResponse);
+    const request = this._buildRequest(req, "auto", undefined, signal);
+    const response = await this._engine.head(request, signal);
+    return {
+      status: response.status,
+      headers: response.headers as Record<string, string | string[]>,
+    };
   }
 
   /**
-   * @ru Выполняет GET-запрос и возвращает ответ в виде потока (StreamResponse). Тело ответа — ReadableStream.
-   * @en Performs a GET request and returns the response as a stream (StreamResponse). Response body is a ReadableStream.
-   * @param req - Request URL or RequestInterface object.
+   * @ru Выполняет потоковый GET-запрос. Тело ответа возвращается как ReadableStream.
+   * @en Performs a streaming GET request. Response body is returned as a ReadableStream.
+   * @param req - Request URL or configuration object.
    * @param signal - Optional abort signal.
-   * @returns Promise with HTTP response containing a readable stream body.
+   * @returns Promise resolving to the stream response.
    */
-  public async stream(
-    req: RequestInterface | string,
-    signal?: AbortSignal,
-  ): Promise<HttpResponse<StreamResponseBody>> {
-    return this._engine
-      .stream(req, signal)
-      .then(HyperClient.formatStreamResponse);
+  public stream(req: RequestInterface | string, signal?: AbortSignal) {
+    return this._engine.stream(req, signal);
   }
 
   /**
-   * @ru Создаёт построитель запроса (RequestBuilder) для удобной цепочной настройки GET-запроса.
-   * @en Creates a RequestBuilder for convenient chained GET request configuration.
-   * @param url - Base URL for the request.
-   * @returns RequestBuilder instance.
-   */
-  public request(url: string): RequestBuilder {
-    return new RequestBuilder(url, this);
-  }
-
-  /**
-   * @ru Создаёт новый экземпляр HyperClient с расширенной конфигурацией (поверх текущей).
-   * @en Creates a new HyperClient instance with extended configuration (on top of current).
-   * @param options - Partial configuration to merge.
-   * @returns New HyperClient instance.
+   * @ru Создаёт новый экземпляр клиента, объединяя текущую конфигурацию с переданными опциями.
+   * @en Creates a new client instance by merging the current configuration with provided options.
+   * @param options - Partial configuration options to extend.
+   * @returns A new HyperClient instance.
    */
   public extend(options: Partial<HttpClientOptions>): HyperClient {
     return new HyperClient({
       ...this._config,
       ...options,
-      network: {
-        ...this._config.network,
-        ...options.network,
-      },
+      network: { ...this._config.network, ...options.network },
     });
   }
 
   /**
-   * @ru Алиас для extend(). Создаёт новый экземпляр HyperClient.
-   * @en Alias for extend(). Creates a new HyperClient instance.
-   * @param options - Configuration options.
-   * @returns New HyperClient instance.
+   * @ru Алиас для extend(). Создаёт новый экземпляр клиента.
+   * @en Alias for extend(). Creates a new client instance.
+   * @param options - Partial configuration options.
+   * @returns A new HyperClient instance.
    */
   public create(options: Partial<HttpClientOptions>): HyperClient {
     return this.extend(options);
   }
 
   /**
-   * @ru Уничтожает клиент, закрывая соединения и очищая ресурсы (транспорт, агенты).
-   * @en Destroys the client, closing connections and cleaning up resources (transport, agents).
-   * @returns Promise that resolves after destruction.
+   * @ru Завершает работу клиента и освобождает ресурсы (соединения, пулы, плагины).
+   * @en Shuts down the client and releases resources (connections, pools, plugins).
+   * @returns Promise that resolves when shutdown is complete.
    */
   public async destroy(): Promise<void> {
     await this._engine.destroy();
   }
 
   /**
-   * @ru Возвращает статистику работы клиента (если включены метрики).
-   * @en Returns client statistics (if metrics are enabled).
-   * @returns Statistics object or undefined.
+   * @ru Возвращает статистику работы клиента (активные соединения, очередь, кэш).
+   * Требует наличия плагина метрик или очереди.
+   * @en Returns client statistics (active connections, queue, cache).
+   * Requires metrics or queue plugin to be registered.
+   * @returns Statistics object, or undefined if no plugin provides it.
    */
-  public getStats(): Record<string, unknown> | undefined {
-    return this._engine.getStats?.();
+  public getStats(): unknown {
+    return (this._engine as unknown as IHyperCore).getStats?.();
   }
 
   /**
-   * @ru Очищает кэш ответов (если используется плагин кэширования).
-   * @en Clears the response cache (if the caching plugin is used).
-   * @returns Void or Promise if async clearing is required.
+   * @ru Возвращает все агрегированные метрики (latency, RPS, cache hits и т.д.).
+   * Требует наличия плагина `withMetrics`.
+   * @en Returns all aggregated metrics (latency, RPS, cache hits, etc.).
+   * Requires the `withMetrics` plugin to be registered.
+   * @returns Array of metrics, or undefined if the plugin is not registered.
    */
-  public clearCache(): void | Promise<void> | undefined {
-    return this._engine.clearCache?.();
-  }
-
-  /**
-   * @ru Возвращает все метрики (если включен плагин метрик).
-   * @en Returns all metrics (if the metrics plugin is enabled).
-   * @returns Metrics object or undefined.
-   */
-  public getAllMetrics(): Record<string, unknown> | undefined {
-    return this._engine.getAllMetrics?.();
+  public getAllMetrics(): RequestMetrics[] | undefined {
+    return (this._engine as unknown as IHyperCore).getAllMetrics?.();
   }
 
   /**
    * @ru Возвращает конкретную метрику по ключу.
+   * Требует наличия плагина `withMetrics`.
    * @en Returns a specific metric by key.
-   * @param key - Metric key.
-   * @returns Metric value or undefined.
+   * Requires the `withMetrics` plugin to be registered.
+   * @param key - Metric key (e.g., 'rps', 'avgLatency', 'cacheHits').
+   * @returns Metric value, or undefined if not found.
    */
-  public getMetrics(key: string): unknown {
-    return this._engine.getMetrics?.(key);
+  public getMetrics(key: string): RequestMetrics | RequestMetrics[] | undefined {
+    return (this._engine as unknown as IHyperCore).getMetrics?.(key);
+  }
+
+  /**
+   * @ru Очищает кэш ответов. Требует наличия плагина `withCache`.
+   * @en Clears the response cache. Requires the `withCache` plugin.
+   * @returns Void or Promise if async clearing is required.
+   */
+  public clearCache(): void | Promise<void> | undefined {
+    return (this._engine as unknown as IHyperCore).clearCache?.();
+  }
+
+  /**
+   * @ru Возвращает агрегированную сводку метрик (success rate, avg duration, bottlenecks).
+   * Требует наличия плагина `withMetrics`.
+   * @en Returns aggregated metrics summary (success rate, avg duration, bottlenecks).
+   * Requires the `withMetrics` plugin to be registered.
+   * @returns Summary object, or null if no metrics collected.
+   */
+  public getMetricsSummary(): unknown {
+    return (this._engine as unknown as IHyperCore).getMetricsSummary?.();
+  }
+
+  /**
+   * @ru Сбрасывает все накопленные метрики.
+   * Требует наличия плагина `withMetrics`.
+   * @en Resets all accumulated metrics.
+   * Requires the `withMetrics` plugin to be registered.
+   */
+  public resetMetrics(): void {
+    (this._engine as unknown as IHyperCore).resetMetrics?.();
   }
 }
