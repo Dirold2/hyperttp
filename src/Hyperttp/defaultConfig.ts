@@ -9,7 +9,7 @@ export const defaultConfig: HttpClientOptions = {
     followRedirects: true,
     maxRedirects: 5,
     rejectUnauthorized: true,
-    userAgent: "Hyperttp/2.0",
+    userAgent: "Hyperttp/4.0",
   },
 
   retry: {
