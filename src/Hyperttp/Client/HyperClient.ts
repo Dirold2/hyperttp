@@ -7,22 +7,31 @@ import type {
   RequestHeaders,
   HyperPlugin,
   Method,
-  IHyperCore,
   RequestMetrics,
   HyperTransport,
 } from "@hyperttp/types";
 import { defaultConfig } from "../defaultConfig.js";
 import { HyperCore } from "@hyperttp/core";
 import { withParser } from "@hyperttp/parser";
-import { withSerializer } from "@hyperttp/serializer";
 import { withQueue } from "@hyperttp/queue";
 import { withCache } from "@hyperttp/cache";
 import { withRateLimit } from "@hyperttp/ratelimit";
 import { withInflight } from "@hyperttp/inflight";
 import { withInterceptors } from "@hyperttp/interceptors";
 import { withMetrics } from "@hyperttp/metrics";
+import { appendQueryToUrl } from "../Utils/query.js";
+import { RequestBuilder } from "../Utils/RequestBuilder.js";
 
 const EMPTY_HEADERS: Readonly<Record<string, never>> = Object.freeze({});
+
+interface HyperCoreEngine {
+  getStats?(): unknown;
+  getAllMetrics?(): RequestMetrics[];
+  getMetrics?(key: string): RequestMetrics | RequestMetrics[] | undefined;
+  clearCache?(key?: string): void | Promise<void>;
+  getMetricsSummary?(): unknown;
+  resetMetrics?(): void;
+}
 
 type RequestLike = RequestInterface & {
   body?: RequestBodyData;
@@ -62,7 +71,6 @@ export class HyperClient {
     };
     this._engine = new HyperCore(this._config, transport);
 
-    this._engine.use(withSerializer());
     this._engine.use(withParser(this._config.responseConverter));
     this._engine.use(withQueue());
     this._engine.use(withRateLimit(this._config.rateLimit));
@@ -127,23 +135,10 @@ export class HyperClient {
     let finalUrl = url;
     const query = req.query ?? r.getQuery?.();
     if (query && Object.keys(query).length > 0) {
-      try {
-        const urlObj = new URL(finalUrl);
-        for (const k in query) {
-          if (Object.prototype.hasOwnProperty.call(query, k)) {
-            const v = query[k];
-            if (v == null) continue;
-            if (Array.isArray(v)) {
-              for (const item of v) {
-                if (item != null) urlObj.searchParams.append(k, String(item));
-              }
-            } else {
-              urlObj.searchParams.set(k, String(v));
-            }
-          }
-        }
-        finalUrl = urlObj.toString();
-      } catch {
+      const appended = appendQueryToUrl(finalUrl, query as Record<string, string | string[] | number | boolean | undefined | null>);
+      if (appended !== finalUrl) {
+        finalUrl = appended;
+      } else {
         const qs = r.getQueryAsString?.();
         if (qs) finalUrl += qs;
       }
@@ -354,6 +349,16 @@ export class HyperClient {
   }
 
   /**
+   * @ru Возвращает построитель запросов для цепочечного формирования HTTP-запроса.
+   * @en Returns a request builder for chainable HTTP request composition.
+   * @param url - Target URL for the request.
+   * @returns A RequestBuilder instance bound to this client.
+   */
+  public request(url: string): RequestBuilder {
+    return new RequestBuilder(url, this);
+  }
+
+  /**
    * @ru Создаёт новый экземпляр клиента, объединяя текущую конфигурацию с переданными опциями.
    * @en Creates a new client instance by merging the current configuration with provided options.
    * @param options - Partial configuration options to extend.
@@ -394,7 +399,7 @@ export class HyperClient {
    * @returns Statistics object, or undefined if no plugin provides it.
    */
   public getStats(): unknown {
-    return (this._engine as unknown as IHyperCore).getStats?.();
+    return (this._engine as unknown as HyperCoreEngine).getStats?.();
   }
 
   /**
@@ -405,7 +410,7 @@ export class HyperClient {
    * @returns Array of metrics, or undefined if the plugin is not registered.
    */
   public getAllMetrics(): RequestMetrics[] | undefined {
-    return (this._engine as unknown as IHyperCore).getAllMetrics?.();
+    return (this._engine as unknown as HyperCoreEngine).getAllMetrics?.();
   }
 
   /**
@@ -417,7 +422,7 @@ export class HyperClient {
    * @returns Metric value, or undefined if not found.
    */
   public getMetrics(key: string): RequestMetrics | RequestMetrics[] | undefined {
-    return (this._engine as unknown as IHyperCore).getMetrics?.(key);
+    return (this._engine as unknown as HyperCoreEngine).getMetrics?.(key);
   }
 
   /**
@@ -426,7 +431,7 @@ export class HyperClient {
    * @returns Void or Promise if async clearing is required.
    */
   public clearCache(): void | Promise<void> | undefined {
-    return (this._engine as unknown as IHyperCore).clearCache?.();
+    return (this._engine as unknown as HyperCoreEngine).clearCache?.();
   }
 
   /**
@@ -437,7 +442,7 @@ export class HyperClient {
    * @returns Summary object, or null if no metrics collected.
    */
   public getMetricsSummary(): unknown {
-    return (this._engine as unknown as IHyperCore).getMetricsSummary?.();
+    return (this._engine as unknown as HyperCoreEngine).getMetricsSummary?.();
   }
 
   /**
@@ -447,6 +452,6 @@ export class HyperClient {
    * Requires the `withMetrics` plugin to be registered.
    */
   public resetMetrics(): void {
-    (this._engine as unknown as IHyperCore).resetMetrics?.();
+    (this._engine as unknown as HyperCoreEngine).resetMetrics?.();
   }
 }

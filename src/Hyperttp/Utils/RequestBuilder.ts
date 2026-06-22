@@ -1,5 +1,6 @@
 import type { Method, RequestInterface, ResponseType, RequestQuery } from "@hyperttp/types";
 import { HyperClient } from "../Client/HyperClient.js";
+import { appendQueryToUrl } from "./query.js";
 
 /**
  * @ru Строитель запросов для удобного создания и настройки HTTP запросов.
@@ -259,21 +260,7 @@ export class RequestBuilder {
     let finalUrl = this._url;
 
     if (Object.keys(this._queryParams).length > 0) {
-      const urlObj = new URL(this._url);
-      for (const k in this._queryParams) {
-        if (Object.prototype.hasOwnProperty.call(this._queryParams, k)) {
-          const v = this._queryParams[k];
-          if (v == null) continue;
-          if (Array.isArray(v)) {
-            for (const item of v) {
-              if (item != null) urlObj.searchParams.append(k, String(item));
-            }
-          } else {
-            urlObj.searchParams.set(k, String(v));
-          }
-        }
-      }
-      finalUrl = urlObj.toString();
+      finalUrl = appendQueryToUrl(this._url, this._queryParams);
     }
 
     return {

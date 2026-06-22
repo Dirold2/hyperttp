@@ -198,7 +198,6 @@ When using `HyperClient`, the following plugins are automatically registered:
 
 | Plugin             | Purpose                                                     |
 | ------------------ | ----------------------------------------------------------- |
-| `withSerializer`   | Serializes request bodies (JSON, FormData, URLSearchParams) |
 | `withParser`       | Parses response bodies based on `responseType`              |
 | `withQueue`        | Queues requests when concurrency limit is reached           |
 | `withRateLimit`    | Enforces rate limits                                        |
@@ -255,7 +254,7 @@ client.use({
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        HyperClient                              │
-│   (Auto-wires: Serializer → Parser → Queue → RateLimit →        │
+│   (Auto-wires: Parser → Queue → RateLimit →                     │
 │    Inflight → Cache → Interceptors → Metrics)                   │
 └──────────────────────────┬──────────────────────────────────────┘
                            │

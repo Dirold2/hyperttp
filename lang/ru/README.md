@@ -198,7 +198,6 @@ const client = new HyperClient({
 
 | Плагин             | Назначение                                                  |
 | ------------------ | ----------------------------------------------------------- |
-| `withSerializer`   | Сериализует тела запросов (JSON, FormData, URLSearchParams) |
 | `withParser`       | Парсит тела ответов на основе `responseType`                |
 | `withQueue`        | Ставит запросы в очередь при достижении лимита параллелизма |
 | `withRateLimit`    | Обеспечивает соблюдение rate limit'ов                       |
@@ -255,7 +254,7 @@ client.use({
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        HyperClient                              │
-│   (Авто-подключение: Serializer → Parser → Queue → RateLimit →  │
+│   (Авто-подключение: Parser → Queue → RateLimit →              │
 │    Inflight → Cache → Interceptors → Metrics)                   │
 └──────────────────────────┬──────────────────────────────────────┘
                            │

@@ -21,7 +21,7 @@ export default class Request implements RequestInterface {
   private _signal?: AbortSignal;
   public method: Method = "GET";
   private bodyType: "json" | "form" = "json";
-  private _meta: any = {};
+  private _meta: Record<string, unknown> = {};
   public query: RequestQuery;
 
   /**
@@ -29,7 +29,7 @@ export default class Request implements RequestInterface {
    * @en Creates a Request instance.
    * @param config - Configuration object with scheme, host, port, path, headers, query, bodyData, meta.
    */
-  constructor(config: RequestConfig & { meta?: any }) {
+  constructor(config: RequestConfig & { meta?: Record<string, unknown> }) {
     this.scheme = config.scheme;
     this.host = config.host;
     this.port = config.port ?? (config.scheme === "https" ? 443 : 80);
@@ -77,7 +77,7 @@ export default class Request implements RequestInterface {
    * @ru Мета-данные запроса (произвольные данные).
    * @en Request metadata (arbitrary data).
    */
-  get meta(): any {
+  get meta(): Record<string, unknown> {
     return this._meta;
   }
 
