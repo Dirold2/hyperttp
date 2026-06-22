@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../../src/Hyperttp/Utils/index.ts"],
+  "sourcesContent": ["export { RequestBuilder } from \"./RequestBuilder.js\";\nexport { appendQueryToUrl } from \"./query.js\";\n"],
+  "mappings": "aAAA,OAAS,mBAAsB,sBAC/B,OAAS,qBAAwB",
+  "names": []
+}

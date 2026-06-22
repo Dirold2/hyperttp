@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/Hyperttp/defaultConfig.ts"],
+  "sourcesContent": ["import type { HttpClientOptions } from \"@hyperttp/types\";\n\nexport const defaultConfig: HttpClientOptions = {\n  network: {\n    timeout: 30000,\n    maxConcurrent: 500,\n    pipelining: 10,\n    keepAliveTimeout: 30000,\n    followRedirects: true,\n    maxRedirects: 5,\n    rejectUnauthorized: true,\n  },\n\n  retry: {\n    maxRetries: 3,\n    baseDelay: 100,\n    maxDelay: 5000,\n    jitter: true,\n  },\n\n  metrics: {\n    enabled: true,\n  },\n\n  cache: {\n    enabled: true,\n    maxSize: 1000,\n    ttl: 60000,\n  },\n\n  interceptors: {\n    enabled: true,\n  },\n\n  rateLimit: {\n    enabled: true,\n    maxRequests: 10000,\n    windowMs: 1000,\n  },\n\n  queue: {\n    enabled: true,\n  },\n\n  verbose: false,\n};\n"],
+  "mappings": "aAEO,aAAM,cAAmC,CAC9C,QAAS,CACP,QAAS,IACT,cAAe,IACf,WAAY,GACZ,iBAAkB,IAClB,gBAAiB,GACjB,aAAc,EACd,mBAAoB,IAGtB,MAAO,CACL,WAAY,EACZ,UAAW,IACX,SAAU,IACV,OAAQ,IAGV,QAAS,CACP,QAAS,IAGX,MAAO,CACL,QAAS,GACT,QAAS,IACT,IAAK,KAGP,aAAc,CACZ,QAAS,IAGX,UAAW,CACT,QAAS,GACT,YAAa,IACb,SAAU,KAGZ,MAAO,CACL,QAAS,IAGX,QAAS",
+  "names": []
+}

@@ -4,17 +4,14 @@
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./index.d.ts",
+      "import": "./index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
   "keywords": [
     "http",
     "client",
@@ -49,32 +46,5 @@
     "@hyperttp/serializer": "^1.2.0",
     "@hyperttp/types": "^0.2.4"
   },
-  "devDependencies": {
-    "@dirold2/dev-tools": "^1.1.0",
-    "@types/node": "^26.0.0",
-    "@vitest/coverage-v8": "^4.1.9",
-    "@vitest/ui": "^4.1.9",
-    "chalk": "^5.6.2",
-    "dotenv-cli": "^11.0.0",
-    "esbuild": "^0.28.1",
-    "jiti": "^2.7.0",
-    "oxfmt": "^0.56.0",
-    "oxlint": "^1.71.0",
-    "tsx": "^4.22.4",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
-  },
-  "scripts": {
-    "build": "tsc && esbuild 'dist/**/*.js' --outdir=dist --allow-overwrite --minify --sourcemap && d-build",
-    "dist": "d-dist",
-    "deploy": "npm run build && npm run dist",
-    "publish": "d-publish",
-    "typecheck": "tsc --noEmit",
-    "lint": "oxlint src",
-    "lint:fix": "oxlint src --fix",
-    "format": "oxfmt src",
-    "format:check": "oxfmt src --check",
-    "test": "vitest run",
-    "dev": "tsx src/index.ts"
-  }
+  "private": false
 }
