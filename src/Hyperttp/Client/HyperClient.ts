@@ -63,7 +63,10 @@ export class HyperClient {
    * @en Creates a HyperClient instance and registers all standard plugins.
    * @param config - Client configuration options.
    */
-  constructor(config: HttpClientOptions = defaultConfig, transport?: HyperTransport) {
+  constructor(
+    config: HttpClientOptions = defaultConfig,
+    transport?: HyperTransport,
+  ) {
     this._config = {
       ...defaultConfig,
       ...config,
@@ -128,23 +131,37 @@ export class HyperClient {
     const url = req.url ?? r.getURL?.() ?? "";
     const headers = req.headers ?? r.getHeaders?.() ?? EMPTY_HEADERS;
     const extractedBody =
-      body ?? r.body ?? r.bodyData ?? r._bodyData ?? r.getBodyData?.() ?? r.getBodyDataString?.();
+      body ??
+      r.body ??
+      r.bodyData ??
+      r._bodyData ??
+      r.getBodyData?.() ??
+      r.getBodyDataString?.();
 
     const extractedSignal = signal ?? req.signal ?? r.getSignal?.();
 
     let finalUrl = url;
-    const query = req.query ?? r.getQuery?.();
-    if (query && Object.keys(query).length > 0) {
-      const appended = appendQueryToUrl(finalUrl, query as Record<string, string | string[] | number | boolean | undefined | null>);
-      if (appended !== finalUrl) {
-        finalUrl = appended;
+
+    if (!r.getURL) {
+      const query = req.query ?? r.getQuery?.();
+      if (query && Object.keys(query).length > 0) {
+        const appended = appendQueryToUrl(
+          finalUrl,
+          query as Record<
+            string,
+            string | string[] | number | boolean | undefined | null
+          >,
+        );
+        if (appended !== finalUrl) {
+          finalUrl = appended;
+        } else {
+          const qs = r.getQueryAsString?.();
+          if (qs) finalUrl += qs;
+        }
       } else {
         const qs = r.getQueryAsString?.();
         if (qs) finalUrl += qs;
       }
-    } else {
-      const qs = r.getQueryAsString?.();
-      if (qs) finalUrl += qs;
     }
 
     return {
@@ -421,7 +438,9 @@ export class HyperClient {
    * @param key - Metric key (e.g., 'rps', 'avgLatency', 'cacheHits').
    * @returns Metric value, or undefined if not found.
    */
-  public getMetrics(key: string): RequestMetrics | RequestMetrics[] | undefined {
+  public getMetrics(
+    key: string,
+  ): RequestMetrics | RequestMetrics[] | undefined {
     return (this._engine as unknown as HyperCoreEngine).getMetrics?.(key);
   }
 

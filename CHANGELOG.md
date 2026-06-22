@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.11] - 2026-06-22
+
+### Fixed
+- `HyperClient._buildRequest` no longer duplicates query parameters when a `Request`/`PreparedRequest` object is passed. `Request.buildURL()` already bakes query params into the URL via the `url` getter, but `_buildRequest` was also reading `getQuery()` and appending them again, producing malformed URLs like `?ts=a&sign=b?ts=a&sign=b`. Added a guard — query appending is skipped for objects that have a `getURL` method (i.e., `Request`-like).
+
 ## [0.4.10] - 2026-06-22
 
 ### Added
