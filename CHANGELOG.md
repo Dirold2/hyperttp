@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.14] - 2026-07-18
+
+### Changed
+- Updated `@hyperttp/core` ^1.5.4 → ^1.5.5
+
 ## [0.4.13] - 2026-07-18
 
 ### Changed
