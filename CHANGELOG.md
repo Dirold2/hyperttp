@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.13] - 2026-07-18
+
+### Changed
+- Updated `@hyperttp/core` ^1.5.3 → ^1.5.4
+
+## [0.4.12] - 2026-06-22
+
+### Changed
+- Dependency updates: `@hyperttp/core` ^1.5.0 → ^1.5.3, `@hyperttp/types` ^0.2.4 → ^0.2.5
+- Dev dependency updates: TypeScript ^6.0.3 → ^7.0.2, Vitest ^4.1.9 → ^4.1.10, oxfmt ^0.56.0 → ^0.59.0, oxlint ^1.71.0 → ^1.74.0, tsx ^4.22.4 → ^4.23.1, @types/node ^26.0.0 → ^26.1.1
+- Removed `@vitest/ui` from devDependencies
+- README.md and `lang/ru/README.md` refactored
+
 ## [0.4.11] - 2026-06-22
 
 ### Fixed
