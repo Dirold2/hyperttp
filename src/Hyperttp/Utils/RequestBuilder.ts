@@ -291,23 +291,15 @@ export class RequestBuilder {
       return this._client.head(req, signal) as unknown as Promise<T>;
     }
 
-    const hasBody = ["POST", "PUT", "PATCH", "OPTIONS"].includes(this._method);
+    const m = this._method;
+    const hasBody = m === "POST" || m === "PUT" || m === "PATCH" || m === "OPTIONS";
 
-    switch (this._method) {
-      case "GET":
-        return this._client.get<T>(req, responseType, signal);
-      case "POST":
-        return this._client.post<T>(req, responseType, this._body, signal);
-      case "PUT":
-        return this._client.put<T>(req, responseType, this._body, signal);
-      case "PATCH":
-        return this._client.patch<T>(req, responseType, this._body, signal);
-      case "DELETE":
-        return this._client.delete<T>(req, responseType, signal);
-      case "OPTIONS":
-        return this._client.options<T>(req, responseType, hasBody ? this._body : undefined, signal);
-      default:
-        return this._client.get<T>(req, responseType, signal);
-    }
+    return this._client._execute<T>(
+      this._method,
+      req,
+      responseType,
+      hasBody ? this._body : undefined,
+      signal,
+    );
   }
 }

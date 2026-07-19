@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.4.14",
+  "version": "0.4.15",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "sideEffects": false,

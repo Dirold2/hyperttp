@@ -128,6 +128,19 @@ export class HyperClient {
       };
     }
     const r = req as RequestLike;
+
+    if (!r.getURL && !r.getHeaders && !r.getBodyData && !r.getQuery) {
+      if (body) req.body = body;
+      if (signal) req.signal = signal;
+      if (req.meta?.responseType === responseType) return req;
+      if (!req.meta) {
+        req.meta = { responseType };
+      } else if (req.meta.responseType !== responseType) {
+        req.meta.responseType = responseType;
+      }
+      return req;
+    }
+
     const url = req.url ?? r.getURL?.() ?? "";
     const headers = req.headers ?? r.getHeaders?.() ?? EMPTY_HEADERS;
     const extractedBody =
@@ -185,8 +198,9 @@ export class HyperClient {
    * @param body - Optional request body.
    * @param signal - Optional abort signal.
    * @returns Promise resolving to the parsed response body.
+   * @internal Used by RequestBuilder to bypass the public API double-pass
    */
-  private async _execute<T>(
+  public async _execute<T>(
     method: Method,
     req: RequestInterface | string,
     responseType: ResponseType = "auto",
