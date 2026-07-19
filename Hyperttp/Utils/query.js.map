@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../../src/Hyperttp/Utils/query.ts"],
+  "sourcesContent": ["import type { RequestQuery } from \"@hyperttp/types\";\n\nexport function appendQueryToUrl(url: string, query: RequestQuery): string {\n  try {\n    const urlObj = new URL(url);\n    for (const k in query) {\n      if (Object.prototype.hasOwnProperty.call(query, k)) {\n        const v = query[k];\n        if (v == null) continue;\n        if (Array.isArray(v)) {\n          for (const item of v) {\n            if (item != null) urlObj.searchParams.append(k, String(item));\n          }\n        } else {\n          urlObj.searchParams.set(k, String(v));\n        }\n      }\n    }\n    return urlObj.toString();\n  } catch {\n    return url;\n  }\n}\n"],
+  "mappings": "aAEM,gBAAU,iBAAiBA,EAAaC,EAAmB,CAC/D,GAAI,CACF,MAAMC,EAAS,IAAI,IAAIF,CAAG,EAC1B,UAAWG,KAAKF,EACd,GAAI,OAAO,UAAU,eAAe,KAAKA,EAAOE,CAAC,EAAG,CAClD,MAAMC,EAAIH,EAAME,CAAC,EACjB,GAAIC,GAAK,KAAM,SACf,GAAI,MAAM,QAAQA,CAAC,EACjB,UAAWC,KAAQD,EACbC,GAAQ,MAAMH,EAAO,aAAa,OAAOC,EAAG,OAAOE,CAAI,CAAC,OAG9DH,EAAO,aAAa,IAAIC,EAAG,OAAOC,CAAC,CAAC,CAExC,CAEF,OAAOF,EAAO,SAAQ,CACxB,MAAQ,CACN,OAAOF,CACT,CACF",
+  "names": ["url", "query", "urlObj", "k", "v", "item"]
+}

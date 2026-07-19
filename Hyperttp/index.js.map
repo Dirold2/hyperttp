@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/Hyperttp/index.ts"],
+  "sourcesContent": ["export { HyperClient } from \"./Client/HyperClient.js\";\nexport { default as Request } from \"./Request.js\";\nexport { PreparedRequest } from \"./Request.js\";\nexport { default as UrlExtractor } from \"./UrlExtractor.js\";\nexport * from \"./Utils/index.js\";\n"],
+  "mappings": "aAAA,OAAS,gBAAmB,0BAC5B,OAAS,WAAW,YAAe,eACnC,OAAS,oBAAuB,eAChC,OAAS,WAAW,iBAAoB,oBACxC,WAAc",
+  "names": []
+}

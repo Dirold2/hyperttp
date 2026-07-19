@@ -1,0 +1,2 @@
+"use strict";export const defaultConfig={network:{timeout:3e4,maxConcurrent:500,pipelining:10,keepAliveTimeout:3e4,followRedirects:!0,maxRedirects:5,rejectUnauthorized:!0},retry:{maxRetries:3,baseDelay:100,maxDelay:5e3,jitter:!0},metrics:{enabled:!0},cache:{enabled:!0,maxSize:1e3,ttl:6e4},interceptors:{enabled:!0},rateLimit:{enabled:!0,maxRequests:1e4,windowMs:1e3},queue:{enabled:!0},verbose:!1};
+//# sourceMappingURL=defaultConfig.js.map
