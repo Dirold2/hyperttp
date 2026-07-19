@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.16] - 2026-07-19
+
+### Changed
+- Updated `@hyperttp/cache` ^1.1.6 → ^1.2.0
+- Updated `@hyperttp/parser` ^1.1.8 → ^1.2.0
+
 ## [0.4.15] - 2026-07-19
 
 ### Fixed
