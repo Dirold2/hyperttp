@@ -80,6 +80,25 @@ describe("UrlExtractor", () => {
     expect(result.id).toBe("25063569");
   });
 
+  it("supports global regex patterns repeatedly", () => {
+    const extractor = new UrlExtractor();
+    extractor.registerPlatform("example", [
+      { entity: "track", regex: /example\.com\/track\/(?<id>\d+)/g, groupNames: ["id"] },
+    ]);
+
+    expect(extractor.extractId("https://example.com/track/123", "track", "example").id).toBe(123);
+    expect(extractor.extractId("https://example.com/track/456", "track", "example").id).toBe(456);
+  });
+
+  it("supports sticky regex patterns", () => {
+    const extractor = new UrlExtractor();
+    extractor.registerPlatform("example", [
+      { entity: "track", regex: /https:\/\/example\.com\/track\/(?<id>\d+)/y, groupNames: ["id"] },
+    ]);
+
+    expect(extractor.extractId("https://example.com/track/123", "track", "example").id).toBe(123);
+  });
+
   it("throws for unknown platform", () => {
     const extractor = new UrlExtractor();
 

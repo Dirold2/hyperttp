@@ -18,8 +18,8 @@ import { HyperClient } from "hyperttp";
 
 const client = new HyperClient();
 
-// Автоматически парсит ответ на основе второго аргумента
-const user = await client.get("https://api.example.com/users/1", "json");
+// Явно разбирает JSON независимо от заголовка Content-Type
+const user = await client.request("https://api.example.com/users/1").json().send();
 
 console.log(user);
 ```
@@ -120,9 +120,10 @@ const client = new HyperClient({
   baseURL: "https://api.example.com",
 });
 
-await client.get("/users", "json");
-await client.post("/users", { name: "John" }, "json");
-await client.put("/users/1", { name: "Alice" }, "json");
+await client.get("/users"); // Парсинг на основе Content-Type
+await client.request("/users").json().send();
+await client.request("/users").post().jsonBody({ name: "John" }).json().send();
+await client.request("/users/1").put().jsonBody({ name: "Alice" }).json().send();
 await client.delete("/users/1");
 ```
 
@@ -164,7 +165,7 @@ const client = new HyperClient({
   baseURL: "https://api.example.com",
 
   retry: {
-    retries: 3,
+    maxRetries: 3,
   },
 
   cache: {
@@ -174,6 +175,31 @@ const client = new HyperClient({
   timeout: 30_000,
 });
 ```
+
+### Встроенные плагины
+
+`HyperClient` автоматически регистрирует интерцепторы, сериализацию, метрики, дедупликацию запросов,
+кэширование, ограничение частоты запросов, очередь и парсинг ответов.
+
+Отключить только автоматический парсинг ответов:
+
+```ts
+const client = new HyperClient({
+  responseConverter: false,
+});
+```
+
+Отключить весь набор встроенных плагинов для минимального конвейера:
+
+```ts
+const client = new HyperClient({
+  builtInPlugins: false,
+});
+```
+
+REST-протокол остаётся доступным. Плагины из `plugins` и зарегистрированные через `client.use()`
+продолжают работать. При `builtInPlugins: false` параметр `responseConverter` не влияет на поведение,
+поскольку встроенный парсер не регистрируется.
 
 ---
 
@@ -199,57 +225,49 @@ const client = new HyperClient({
 
 ## Транспорты для сред выполнения
 
-Hyperttp работает **из коробки** в любой среде, используя стандартный `globalThis.fetch`.
-
-Для максимальной производительности и
-поддержки нативных возможностей вы можете опционально установить
-оптимизированный пакет транспорта под конкретную среду выполнения:
-
-| Среда   | Пакет                        | Описание                                                   |
-| ------- | ---------------------------- | ---------------------------------------------------------- |
-| Node.js | `@hyperttp/transport-undici` | Использует высокопроизводительный нативный клиент `undici` |
-| Bun     | `@hyperttp/transport-bun`    | Использует оптимизации нативного `Bun.fetch`               |
-| Deno    | `@hyperttp/transport-deno`   | Оптимизирован под нативный сетевой слой Deno               |
-
-После установки дополнительная конфигурация не требуется:
+В Node.js Hyperttp автоматически использует `@hyperttp/transport-undici`. Транспорт входит в пакет
+`hyperttp`, поэтому отдельная установка и настройка клиента не требуются:
 
 ```ts
 import { HyperClient } from "hyperttp";
 
 const client = new HyperClient();
-// Автоматически обнаруживает и использует UndiciTransport в Node.js, BunTransport в Bun и т. д.
+// В Node.js используется UndiciTransport.
 ```
+
+В других средах доступен резервный транспорт на основе стандартного `globalThis.fetch`.
+Специализированные транспортные пакеты можно установить отдельно, когда они доступны:
+
+| Среда   | Пакет                        | Доступность                               |
+| ------- | ---------------------------- | ----------------------------------------- |
+| Node.js | `@hyperttp/transport-undici` | Включён и выбирается автоматически        |
+| Bun     | `@hyperttp/transport-bun`    | Опциональный специализированный транспорт |
+| Deno    | `@hyperttp/transport-deno`   | Опциональный специализированный транспорт |
 
 ---
 
 ## Экосистема
 
-- hyperttp
-- @hyperttp/core
-- @hyperttp/types
-- @hyperttp/parser
-- @hyperttp/cache
-- @hyperttp/retry
-- @hyperttp/metrics
-- @hyperttp/serializer
-- @hyperttp/transport-undici
-- @hyperttp/transport-bun
-- @hyperttp/transport-deno
+- `@hyperttp/core`
+- `@hyperttp/types`
+- `@hyperttp/interceptors`
+- `@hyperttp/serializer`
+- `@hyperttp/metrics`
+- `@hyperttp/inflight`
+- `@hyperttp/cache`
+- `@hyperttp/ratelimit`
+- `@hyperttp/queue`
+- `@hyperttp/parser`
+- `@hyperttp/transport-undici`
 
 ---
 
 ## Производительность
 
-Hyperttp спроектирован с использованием конвейеров промежуточного ПО с нулевым выделением памяти (zero-allocation) и
-минимальными накладными расходами.
-Благодаря нативным транспортам для сред выполнения он достигает скорости,
-близкой к «чистому» fetch, предоставляя при этом полный набор функций.
-
-Подробные бенчмарки, сравнивающие потребление памяти и время выполнения запросов в разных средах выполнения,
-доступны в репозитории [IT-IF-OR/bench](https://github.com/IT-IF-OR/bench).
+Результаты сравнивают полные клиентские стеки в одном локальном окружении и не гарантируют такую же производительность в production. Перед выбором клиента запустите бенчмарк со своей нагрузкой, параллелизмом, размером данных и сетевыми условиями. Исходники доступны в репозитории [IT-IF-OR/bench](https://github.com/IT-IF-OR/bench).
 
 ---
 
 ## Лицензия
 
-MIT
+MIT © dirold2

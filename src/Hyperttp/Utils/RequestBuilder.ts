@@ -1,6 +1,8 @@
-import type { Method, RequestInterface, ResponseType, RequestQuery } from "@hyperttp/types";
+import type { HttpMethod, RestRequestOptions } from "@hyperttp/core/rest";
 import { HyperClient } from "../Client/HyperClient.js";
-import { appendQueryToUrl } from "./query.js";
+import { appendQueryToUrl, type RequestQuery } from "./query.js";
+
+export type ResponseType = "json" | "text" | "xml" | "html" | "buffer" | "stream";
 
 /**
  * @ru Строитель запросов для удобного создания и настройки HTTP запросов.
@@ -8,13 +10,14 @@ import { appendQueryToUrl } from "./query.js";
  */
 export class RequestBuilder {
   private _url: string;
-  private _method: Method = "GET";
+  private _method: HttpMethod = "GET";
   private _headers: Record<string, string> = {};
   private _body?: unknown;
-  private _responseType: ResponseType = "json";
   private _client: HyperClient;
   private _signal?: AbortSignal;
   private _queryParams: RequestQuery = {};
+  private _timeout?: number;
+  private _responseType?: ResponseType;
 
   /**
    * @ru Создаёт экземпляр построителя запросов.
@@ -33,7 +36,7 @@ export class RequestBuilder {
    * @param method - HTTP method (GET, POST, etc.).
    * @returns This builder instance for chaining.
    */
-  method(method: Method): this {
+  method(method: HttpMethod): this {
     this._method = method;
     return this;
   }
@@ -154,66 +157,6 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Устанавливает ожидаемый тип ответа в JSON (по умолчанию).
-   * @en Sets expected response type to JSON (default).
-   * @returns This builder instance for chaining.
-   */
-  json(): this {
-    this._responseType = "json";
-    return this;
-  }
-
-  /**
-   * @ru Устанавливает ожидаемый тип ответа в текст (string).
-   * @en Sets expected response type to text (string).
-   * @returns This builder instance for chaining.
-   */
-  text(): this {
-    this._responseType = "text";
-    return this;
-  }
-
-  /**
-   * @ru Устанавливает ожидаемый тип ответа в XML.
-   * @en Sets expected response type to XML.
-   * @returns This builder instance for chaining.
-   */
-  xml(): this {
-    this._responseType = "xml";
-    return this;
-  }
-
-  /**
-   * @ru Устанавливает ожидаемый тип ответа в HTML.
-   * @en Sets expected response type to HTML.
-   * @returns This builder instance for chaining.
-   */
-  html(): this {
-    this._responseType = "html";
-    return this;
-  }
-
-  /**
-   * @ru Устанавливает ожидаемый тип ответа в буфер (Buffer / Uint8Array).
-   * @en Sets expected response type to buffer (Buffer / Uint8Array).
-   * @returns This builder instance for chaining.
-   */
-  buffer(): this {
-    this._responseType = "buffer";
-    return this;
-  }
-
-  /**
-   * @ru Устанавливает ожидаемый тип ответа в поток (ReadableStream).
-   * @en Sets expected response type to stream (ReadableStream).
-   * @returns This builder instance for chaining.
-   */
-  stream(): this {
-    this._responseType = "stream";
-    return this;
-  }
-
-  /**
    * @ru Устанавливает сигнал для отмены запроса (AbortSignal).
    * @en Sets an abort signal for the request.
    * @param signal - AbortSignal instance.
@@ -231,7 +174,37 @@ export class RequestBuilder {
    * @returns This builder instance for chaining.
    */
   timeout(ms: number): this {
-    this._signal = AbortSignal.timeout(ms);
+    this._timeout = ms;
+    return this;
+  }
+
+  json(): this {
+    this._responseType = "json";
+    return this;
+  }
+
+  text(): this {
+    this._responseType = "text";
+    return this;
+  }
+
+  xml(): this {
+    this._responseType = "xml";
+    return this;
+  }
+
+  html(): this {
+    this._responseType = "html";
+    return this;
+  }
+
+  buffer(): this {
+    this._responseType = "buffer";
+    return this;
+  }
+
+  stream(): this {
+    this._responseType = "stream";
     return this;
   }
 
@@ -245,31 +218,36 @@ export class RequestBuilder {
     cloned._method = this._method;
     cloned._headers = { ...this._headers };
     cloned._body = this._body;
-    cloned._responseType = this._responseType;
     cloned._signal = this._signal;
     cloned._queryParams = { ...this._queryParams };
+    cloned._timeout = this._timeout;
+    cloned._responseType = this._responseType;
     return cloned;
   }
 
   /**
-   * @ru Формирует объект запроса RequestInterface из текущих настроек.
-   * @en Builds a RequestInterface object from current settings.
-   * @returns RequestInterface ready for dispatching.
+   * @ru Формирует URL с учётом параметров запроса.
+   * @en Builds the URL with query parameters applied.
+   * @returns The final URL string.
    */
-  private toRequest(): RequestInterface {
-    let finalUrl = this._url;
-
+  private buildUrl(): string {
     if (Object.keys(this._queryParams).length > 0) {
-      finalUrl = appendQueryToUrl(this._url, this._queryParams);
+      return appendQueryToUrl(this._url, this._queryParams);
     }
+    return this._url;
+  }
 
-    return {
-      url: finalUrl,
-      headers: this._headers,
-      body: this._body,
-      signal: this._signal,
-      meta: { responseType: this._responseType },
-    };
+  /**
+   * @ru Формирует опции запроса из текущих настроек.
+   * @en Builds request options from current settings.
+   * @returns RestRequestOptions ready for dispatching.
+   */
+  private toOptions(): RestRequestOptions {
+    const opts: RestRequestOptions = {};
+    if (Object.keys(this._headers).length > 0) opts.headers = this._headers;
+    if (this._body !== undefined) opts.body = this._body;
+    if (this._timeout !== undefined) opts.timeout = this._timeout;
+    return opts;
   }
 
   /**
@@ -279,16 +257,11 @@ export class RequestBuilder {
    * @returns Promise resolving to the response (type depends on responseType).
    */
   send<T = unknown>(): Promise<T> {
-    const req = this.toRequest();
-    const responseType = this._responseType;
-    const signal = this._signal;
-
-    if (responseType === "stream") {
-      return this._client.stream(req, signal) as Promise<T>;
-    }
+    const url = this.buildUrl();
+    const opts = this.toOptions();
 
     if (this._method === "HEAD") {
-      return this._client.head(req, signal) as unknown as Promise<T>;
+      return this._client.head(url, opts, this._signal) as unknown as Promise<T>;
     }
 
     const m = this._method;
@@ -296,10 +269,10 @@ export class RequestBuilder {
 
     return this._client._execute<T>(
       this._method,
-      req,
-      responseType,
-      hasBody ? this._body : undefined,
-      signal,
+      url,
+      hasBody ? { ...opts, body: this._body } : opts,
+      this._signal,
+      this._responseType ? { responseType: this._responseType } : undefined,
     );
   }
 }

@@ -17,17 +17,24 @@ describe("HyperClient", () => {
     expect(res.timestamp).toBeTypeOf("number");
   });
 
+  it("performs GET with an explicit JSON response type", async () => {
+    const res = await client.get<{ ok: boolean }>(`${BASE}/json`, "json");
+    expect(res.ok).toBe(true);
+  });
+
+  it("exposes the REST protocol namespace", async () => {
+    const res = await client.rest.get<{ ok: boolean }>(`${BASE}/json`);
+    expect(res.status).toBe(200);
+    expect(res.data.ok).toBe(true);
+  });
+
   it("performs GET and returns text", async () => {
-    const res = await client.get<string>(`${BASE}/get`, "text");
+    const res = await client.get<string>(`${BASE}/get`);
     expect(res).toContain("method=GET");
   });
 
   it("performs POST with body", async () => {
-    const res = await client.post<string>(
-      `${BASE}/post`,
-      "text",
-      "hello-body",
-    );
+    const res = await client.post<string>(`${BASE}/post`, "hello-body");
     expect(res).toContain("method=POST");
     expect(res).toContain("hello-body");
   });
@@ -75,9 +82,7 @@ describe("RequestBuilder", () => {
   });
 
   it("sends GET request", async () => {
-    const res = await new RequestBuilder(`${BASE}/json`, client)
-      .get()
-      .send<{ ok: boolean }>();
+    const res = await new RequestBuilder(`${BASE}/json`, client).get().send<{ ok: boolean }>();
     expect(res.ok).toBe(true);
   });
 
@@ -99,12 +104,9 @@ describe("RequestBuilder", () => {
     expect(res).toContain("query=");
   });
 
-  it("response type shorthands work", async () => {
-    const text = await new RequestBuilder(`${BASE}/get`, client)
-      .get()
-      .text()
-      .send<string>();
-    expect(text).toContain("GET");
+  it("passes response type metadata to the request pipeline", async () => {
+    const text = await new RequestBuilder(`${BASE}/get`, client).get().text().send<string>();
+    expect(text).toContain("method=GET");
 
     const json = await new RequestBuilder(`${BASE}/json`, client)
       .get()
@@ -120,9 +122,15 @@ describe("RequestBuilder", () => {
     expect(builder).not.toBe(cloned);
   });
 
-  it("timeout sets abort signal", () => {
-    const builder = new RequestBuilder(`${BASE}/delay/5`, client).timeout(100);
-    expect((builder as any)._signal).toBeInstanceOf(AbortSignal);
+  it("preserves an explicit abort signal when setting a timeout", async () => {
+    const controller = new AbortController();
+    const request = new RequestBuilder(`${BASE}/delay/5`, client)
+      .signal(controller.signal)
+      .timeout(1_000)
+      .send();
+
+    controller.abort();
+    await expect(request).rejects.toThrow();
   });
 
   it("request() returns RequestBuilder", () => {
@@ -131,11 +139,7 @@ describe("RequestBuilder", () => {
   });
 
   it("chainable request().get().send() with text works", async () => {
-    const res = await client
-      .request(`${BASE}/get`)
-      .get()
-      .text()
-      .send<string>();
+    const res = await client.request(`${BASE}/get`).get().text().send<string>();
     expect(res).toContain("GET");
   });
 

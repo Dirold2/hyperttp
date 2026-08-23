@@ -97,6 +97,18 @@ describe("Request", () => {
     expect(qs).toContain("b=2");
   });
 
+  it("getQueryAsString preserves repeated query params", () => {
+    const req = new Request({
+      scheme: "https",
+      host: "example.com",
+      port: 443,
+      query: { tag: ["a", "b"], page: 2 },
+    });
+    const params = new URLSearchParams(req.getQueryAsString());
+    expect(params.getAll("tag")).toEqual(["a", "b"]);
+    expect(params.get("page")).toBe("2");
+  });
+
   it("getBodyDataString returns JSON for JSON body type", () => {
     const req = new Request({
       scheme: "https",
@@ -149,6 +161,11 @@ describe("PreparedRequest", () => {
     expect(url.port).toBe("8080");
     expect(url.pathname).toBe("/v2/users");
     expect(url.searchParams.get("active")).toBe("true");
+  });
+
+  it("preserves repeated query params", () => {
+    const req = new PreparedRequest("https://api.example.com/search?tag=a&tag=b&tag=c");
+    expect(new URL(req.url).searchParams.getAll("tag")).toEqual(["a", "b", "c"]);
   });
 
   it("defaults ports correctly", () => {

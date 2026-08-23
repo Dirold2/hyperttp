@@ -1,6 +1,9 @@
 export { HyperClient, RequestBuilder } from "./Hyperttp/index.js";
 export { Request, PreparedRequest, UrlExtractor } from "./Hyperttp/index.js";
 
+export type { RequestQuery } from "./Hyperttp/Utils/query.js";
+export type { RequestHeaders, RequestBodyData, RequestConfig } from "./Hyperttp/Request.js";
+
 export type * from "./Types/index.js";
 
 export * from "@hyperttp/cache";

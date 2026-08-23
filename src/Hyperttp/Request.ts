@@ -1,17 +1,24 @@
-import type {
-  Method,
-  RequestBodyData,
-  RequestConfig,
-  RequestHeaders,
-  RequestInterface,
-  RequestQuery,
-} from "@hyperttp/types";
+import type { HttpMethod } from "@hyperttp/core/rest";
+import type { RequestQuery } from "./Utils/query.js";
+
+export type RequestHeaders = Record<string, string>;
+export type RequestBodyData = unknown;
+
+export interface RequestConfig {
+  scheme: string;
+  host: string;
+  port?: number;
+  path?: string;
+  headers?: RequestHeaders;
+  query?: RequestQuery;
+  bodyData?: RequestBodyData;
+}
 
 /**
  * @ru Представляет HTTP-запрос с настраиваемой схемой, хостом, портом, путём, заголовками, параметрами запроса и телом. Предоставляет методы для построения и манипуляции запросом.
  * @en Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data. Provides methods to build and manipulate the request.
  */
-export default class Request implements RequestInterface {
+export default class Request {
   private scheme: string;
   private host: string;
   private port: number;
@@ -19,7 +26,7 @@ export default class Request implements RequestInterface {
   private _headers: RequestHeaders;
   private _bodyData: RequestBodyData;
   private _signal?: AbortSignal;
-  public method: Method = "GET";
+  public method: HttpMethod = "GET";
   private bodyType: "json" | "form" = "json";
   private _meta: Record<string, unknown> = {};
   public query: RequestQuery;
@@ -227,7 +234,11 @@ export default class Request implements RequestInterface {
 
     for (const [key, value] of Object.entries(this.query)) {
       if (value === undefined || value === null) continue;
-      params.set(key, String(value));
+      if (Array.isArray(value)) {
+        value.forEach((item) => params.append(key, String(item)));
+      } else {
+        params.set(key, String(value));
+      }
     }
 
     const qs = params.toString();
@@ -312,7 +323,7 @@ export default class Request implements RequestInterface {
    * @param method - HTTP method (e.g., 'GET', 'POST').
    * @returns This request instance for chaining.
    */
-  setMethod(method: Method): this {
+  setMethod(method: HttpMethod): this {
     this.method = method;
     return this;
   }
@@ -427,12 +438,24 @@ export class PreparedRequest extends Request {
   constructor(baseUrl: string) {
     const url = new URL(baseUrl);
 
+    const query: RequestQuery = {};
+    for (const [key, value] of url.searchParams) {
+      const existing = query[key];
+      if (existing == null) {
+        query[key] = value;
+      } else if (Array.isArray(existing)) {
+        existing.push(value);
+      } else {
+        query[key] = [existing, value];
+      }
+    }
+
     super({
       scheme: url.protocol.replace(":", ""),
       host: url.hostname,
       port: resolvePort(url),
       path: url.pathname === "/" ? "" : url.pathname,
-      query: Object.fromEntries(url.searchParams.entries()),
+      query,
     });
   }
 }

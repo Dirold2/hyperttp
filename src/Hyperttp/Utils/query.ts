@@ -1,4 +1,7 @@
-import type { RequestQuery } from "@hyperttp/types";
+export type RequestQuery = Record<
+  string,
+  string | number | boolean | (string | number | boolean)[] | null | undefined
+>;
 
 export function appendQueryToUrl(url: string, query: RequestQuery): string {
   try {

@@ -17,8 +17,8 @@ import { HyperClient } from "hyperttp";
 
 const client = new HyperClient();
 
-// Automatically parses response based on the second argument
-const user = await client.get("https://api.example.com/users/1", "json");
+// Parse JSON explicitly, regardless of the response Content-Type
+const user = await client.request("https://api.example.com/users/1").json().send();
 
 console.log(user);
 ```
@@ -95,7 +95,7 @@ Start making requests.
 
 ## Quick Start
 
-### 1. Install core package
+### 1. Install Hyperttp
 
 ```bash
 # Node.js
@@ -119,9 +119,10 @@ const client = new HyperClient({
   baseURL: "https://api.example.com",
 });
 
-await client.get("/users", "json");
-await client.post("/users", { name: "John" }, "json");
-await client.put("/users/1", { name: "Alice" }, "json");
+await client.get("/users"); // Parses based on Content-Type
+await client.request("/users").json().send();
+await client.request("/users").post().jsonBody({ name: "John" }).json().send();
+await client.request("/users/1").put().jsonBody({ name: "Alice" }).json().send();
 await client.delete("/users/1");
 ```
 
@@ -163,7 +164,7 @@ const client = new HyperClient({
   baseURL: "https://api.example.com",
 
   retry: {
-    retries: 3,
+    maxRetries: 3,
   },
 
   cache: {
@@ -173,6 +174,31 @@ const client = new HyperClient({
   timeout: 30_000,
 });
 ```
+
+### Built-in Plugins
+
+`HyperClient` automatically registers interceptors, serialization, metrics, request deduplication,
+caching, rate limiting, queueing, and response parsing.
+
+Disable only automatic response parsing:
+
+```ts
+const client = new HyperClient({
+  responseConverter: false,
+});
+```
+
+Disable the entire built-in plugin set for a minimal pipeline:
+
+```ts
+const client = new HyperClient({
+  builtInPlugins: false,
+});
+```
+
+The REST protocol remains available when built-in plugins are disabled. Custom plugins supplied
+through `plugins` or registered with `client.use()` continue to work. When `builtInPlugins` is
+`false`, `responseConverter` has no effect because the built-in parser is not registered.
 
 ---
 
@@ -198,54 +224,54 @@ All components are independent and replaceable.
 
 ## Runtime Transports
 
-Hyperttp works **out of the box** in any environment using standard `globalThis.fetch`.
-
-For maximum performance and native features,
-you can optionally install an optimized transport package tailored for your specific runtime:
-
-| Runtime | Package                      | Description                                  |
-| ------- | ---------------------------- | -------------------------------------------- |
-| Node.js | `@hyperttp/transport-undici` | Uses high-performance native `undici` client |
-| Bun     | `@hyperttp/transport-bun`    | Leverages native `Bun.fetch` optimizations   |
-| Deno    | `@hyperttp/transport-deno`   | Optimized for native Deno network layer      |
-
-Once installed, no additional configuration is required:
+Hyperttp uses `@hyperttp/transport-undici` automatically on Node.js. The transport is included with
+the `hyperttp` package, so no additional installation or client configuration is required:
 
 ```ts
 import { HyperClient } from "hyperttp";
 
 const client = new HyperClient();
-// Automatically discovers and uses UndiciTransport on Node.js, BunTransport on Bun, etc.
+// Uses UndiciTransport on Node.js.
 ```
+
+Other runtimes can use the standard `globalThis.fetch` fallback. Runtime-specific transport packages
+can be installed separately when available:
+
+| Runtime | Package                      | Availability                        |
+| ------- | ---------------------------- | ----------------------------------- |
+| Node.js | `@hyperttp/transport-undici` | Included and selected automatically |
+| Bun     | `@hyperttp/transport-bun`    | Optional runtime-specific transport |
+| Deno    | `@hyperttp/transport-deno`   | Optional runtime-specific transport |
 
 ---
 
 ## Ecosystem
 
-- hyperttp
-- @hyperttp/core
-- @hyperttp/types
-- @hyperttp/parser
-- @hyperttp/cache
-- @hyperttp/retry
-- @hyperttp/metrics
-- @hyperttp/serializer
-- @hyperttp/transport-undici
-- @hyperttp/transport-bun
-- @hyperttp/transport-deno
+- `@hyperttp/core`
+- `@hyperttp/types`
+- `@hyperttp/interceptors`
+- `@hyperttp/serializer`
+- `@hyperttp/metrics`
+- `@hyperttp/inflight`
+- `@hyperttp/cache`
+- `@hyperttp/ratelimit`
+- `@hyperttp/queue`
+- `@hyperttp/parser`
+- `@hyperttp/transport-undici`
 
 ---
 
 ## Performance
 
-Hyperttp is designed with zero-allocation middleware pipelines and minimal overhead.
-By using native runtime transports, it achieves near-raw-fetch speeds while providing a full feature set.
+The benchmark suite compares complete client stacks rather than isolated request primitives. Results
+from a local environment are not a guarantee of production performance, so test with your own
+workload, concurrency, payloads, and network conditions.
 
-Detailed benchmarks comparing memory footprints and
-request execution times across runtimes are available in the [IT-IF-OR/bench](https://github.com/IT-IF-OR/bench) repository.
+Benchmark sources and current results are available in
+[IT-IF-OR/bench](https://github.com/IT-IF-OR/bench).
 
 ---
 
 ## License
 
-MIT
+MIT © dirold2

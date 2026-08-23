@@ -67,7 +67,10 @@ export default class UrlExtractor implements UrlExtractorInterface {
    * @returns Object with extracted group values
    */
   private extractGroups<T extends string>(url: string, pattern: UrlPattern<T>): Record<T, string> {
-    const match = url.match(pattern.regex)?.groups;
+    pattern.regex.lastIndex = 0;
+    const match = pattern.regex.exec(url)?.groups;
+    pattern.regex.lastIndex = 0;
+
     if (!match) throw new Error(`Invalid ${pattern.entity} URL: ${url}`);
 
     return pattern.groupNames.reduce(

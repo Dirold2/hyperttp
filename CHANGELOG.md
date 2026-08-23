@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-08-23
+
+### Added
+
+- Added protocol namespaces backed by HyperCore v2, including the REST request pipeline.
+- Added `builtInPlugins: false` to disable automatic registration of interceptors, serializer, metrics, inflight deduplication, cache, rate limiter, queue, and parser plugins while keeping REST and manually registered plugins available.
+- Added `responseConverter: false` to disable only the built-in response parser.
+- Added `@hyperttp/transport-undici` to the `hyperttp` distribution for automatic optimized transport selection on Node.js.
+
+### Changed
+
+- **Breaking:** Migrated HyperClient and its built-in plugins to the Core v2 universal request/response envelope (`SendRequest`, `UniversalResponse`, and `RequestContext`).
+- **Breaking:** Request data now uses protocol-specific `input` and per-request `metadata`; response payloads use `data` instead of the legacy HTTP-only request and response fields.
+- Updated built-in plugin packages to their protocol-neutral Core v2 implementations and `@hyperttp/types` `^0.3.0`.
+- Automatic built-in plugin registration can now be skipped as a group; parser registration is skipped independently when `responseConverter` is `false`.
+
+### Performance
+
+- Avoided disabled parser hook registration and added an all-built-ins-off mode for latency-sensitive clients and benchmark isolation.
+- Reduced response parsing overhead through the parser's already-converted-data fast path.
+- Reached 18.26K median RPS in the Node.js v26.7.0 UndiciTransport benchmark, 28.9% above `hyperttp@0.4.16` (14.16K RPS); `hyperttp@0.5.0` remained 26.7% below raw `undici` in the same run.
+
+### Migration
+
+- Replace legacy request fields such as `method` and `body` with the appropriate protocol `input`.
+- Replace response access through `body` with `data`.
+- Move per-request options from legacy `meta` fields to `metadata`.
+
 ## [0.4.16] - 2026-07-19
 
 ### Changed
