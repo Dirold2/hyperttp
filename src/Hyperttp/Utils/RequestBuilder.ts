@@ -1,6 +1,6 @@
 import type { HttpMethod, RestRequestOptions } from "@hyperttp/core/rest";
 import { HyperClient } from "../Client/HyperClient.js";
-import { appendQueryToUrl, type RequestQuery } from "./query.js";
+import type { RequestQuery } from "./query.js";
 
 export type ResponseType = "json" | "text" | "xml" | "html" | "buffer" | "stream";
 
@@ -226,25 +226,27 @@ export class RequestBuilder {
   }
 
   /**
-   * @ru Формирует URL с учётом параметров запроса.
-   * @en Builds the URL with query parameters applied.
-   * @returns The final URL string.
-   */
-  private buildUrl(): string {
-    if (Object.keys(this._queryParams).length > 0) {
-      return appendQueryToUrl(this._url, this._queryParams);
-    }
-    return this._url;
-  }
-
-  /**
    * @ru Формирует опции запроса из текущих настроек.
    * @en Builds request options from current settings.
    * @returns RestRequestOptions ready for dispatching.
    */
   private toOptions(): RestRequestOptions {
     const opts: RestRequestOptions = {};
+    const query: NonNullable<RestRequestOptions["query"]> = {};
+
+    for (const [key, value] of Object.entries(this._queryParams)) {
+      if (value == null) continue;
+
+      if (Array.isArray(value)) {
+        const items = value.filter((item): item is string | number | boolean => item != null);
+        if (items.length > 0) query[key] = items;
+      } else {
+        query[key] = value;
+      }
+    }
+
     if (Object.keys(this._headers).length > 0) opts.headers = this._headers;
+    if (Object.keys(query).length > 0) opts.query = query;
     if (this._body !== undefined) opts.body = this._body;
     if (this._timeout !== undefined) opts.timeout = this._timeout;
     return opts;
@@ -257,7 +259,7 @@ export class RequestBuilder {
    * @returns Promise resolving to the response (type depends on responseType).
    */
   send<T = unknown>(): Promise<T> {
-    const url = this.buildUrl();
+    const url = this._url;
     const opts = this.toOptions();
 
     if (this._method === "HEAD") {

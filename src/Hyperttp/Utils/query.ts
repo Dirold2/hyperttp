@@ -1,7 +1,6 @@
-export type RequestQuery = Record<
-  string,
-  string | number | boolean | (string | number | boolean)[] | null | undefined
->;
+type RequestQueryValue = string | number | boolean | null | undefined;
+
+export type RequestQuery = Record<string, RequestQueryValue | RequestQueryValue[]>;
 
 export function appendQueryToUrl(url: string, query: RequestQuery): string {
   try {

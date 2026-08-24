@@ -43,15 +43,29 @@ export interface UrlExtractorInterface {
    * @ru Извлекает идентификаторы из URL для указанной сущности и платформы.
    * @en Extracts IDs from URL for the specified entity and platform.
    *
-   * @typeParam T - ID type (string or number).
    * @param url - URL to extract from.
    * @param entity - Entity name to look for.
    * @param platform - Platform name.
+   * @param castNumbers - Convert safe decimal values to numbers when explicitly enabled.
    * @returns Object with extracted IDs mapped by group names.
    */
-  extractId<T extends string | number>(
+  extractId(url: string, entity: string, platform: string): Record<string, string>;
+  extractId(
     url: string,
     entity: string,
     platform: string,
-  ): Record<string, T>;
+    castNumbers: false,
+  ): Record<string, string>;
+  extractId(
+    url: string,
+    entity: string,
+    platform: string,
+    castNumbers: true,
+  ): Record<string, string | number>;
+  extractId(
+    url: string,
+    entity: string,
+    platform: string,
+    castNumbers: boolean,
+  ): Record<string, string | number>;
 }

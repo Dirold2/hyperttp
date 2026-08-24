@@ -38,23 +38,45 @@ describe("Request", () => {
     expect(req.headers["X-Custom"]).toBe("val");
   });
 
-  it("clones correctly", () => {
+  it("deep-clones mutable request data", () => {
     const req = new Request({
       scheme: "https",
       host: "example.com",
       port: 443,
       path: "/original",
       headers: { Authorization: "Bearer tok" },
-      query: { foo: "bar" },
+      query: { tag: ["a", "b"] },
+      bodyData: { nested: { value: "original" } },
+      meta: { nested: { value: "original" } },
     });
     const cloned = req.clone();
 
-    expect(cloned.url).toBe(req.url);
-
     cloned.setPath("/changed");
-    expect(req.path).not.toBe(cloned.path);
+    (cloned.query.tag as string[]).push("c");
+    (cloned.body as { nested: { value: string } }).nested.value = "changed";
+    (cloned.meta.nested as { value: string }).value = "changed";
+
+    expect(new URL(req.url).pathname).toBe("/original");
+    expect(new URL(cloned.url).pathname).toBe("/changed");
+    expect(req.query.tag).toEqual(["a", "b"]);
+    expect((req.body as { nested: { value: string } }).nested.value).toBe("original");
+    expect((req.meta.nested as { value: string }).value).toBe("original");
   });
 
+  it("falls back safely for non-structured-cloneable values", () => {
+    const callback = () => undefined;
+    const req = new Request({
+      scheme: "https",
+      host: "example.com",
+      meta: { callback },
+    });
+
+    const cloned = req.clone();
+
+    expect(cloned).not.toBe(req);
+    expect(cloned.meta).not.toBe(req.meta);
+    expect(cloned.meta.callback).toBe(callback);
+  });
   it("withQuery creates new request with merged query", () => {
     const req = new Request({
       scheme: "https",
@@ -83,6 +105,17 @@ describe("Request", () => {
     const init = req.toFetchInit();
     expect(init.method).toBe("POST");
     expect(init.body).toBe('{"hello":"world"}');
+  });
+
+  it("omits body for GET and HEAD", () => {
+    const req = new Request({
+      scheme: "https",
+      host: "example.com",
+      bodyData: { ignored: true },
+    });
+
+    expect(req.toFetchInit().body).toBeUndefined();
+    expect(req.setMethod("HEAD").toFetchInit().body).toBeUndefined();
   });
 
   it("getQueryAsString returns query string", () => {
@@ -149,7 +182,7 @@ describe("Request", () => {
       port: 443,
     });
     req.setPath("no-leading-slash");
-    expect(req.path).toBe("/no-leading-slash");
+    expect(new URL(req.url).pathname).toBe("/no-leading-slash");
   });
 });
 

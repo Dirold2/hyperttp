@@ -24,6 +24,8 @@ export type ShortcutRequestOptions = RestRequestOptions & {
 
 declare module "@hyperttp/types" {
   interface HyperClientOptions {
+    /** Base URL used to resolve relative URLs passed to high-level client methods. */
+    baseURL?: string;
     /** Disable automatic registration of built-in HyperClient plugins. */
     builtInPlugins?: boolean;
   }
@@ -43,6 +45,7 @@ export interface HyperClient extends HyperProtocols {}
 export class HyperClient {
   private readonly _engine: HyperCore;
   private readonly _config: HyperClientOptions;
+  private readonly _transport?: HyperTransport;
 
   /**
    * @ru Создаёт экземпляр HyperClient и регистрирует REST-протокол.
@@ -55,7 +58,12 @@ export class HyperClient {
     this._config = {
       ...defaultConfig,
       ...config,
+      retry: {
+        ...defaultConfig.retry,
+        ...config.retry,
+      },
     };
+    this._transport = transport;
 
     this._engine = new HyperCore(this._config, transport);
 
@@ -71,13 +79,13 @@ export class HyperClient {
    * @en Registers the client's built-in plugin set.
    */
   private useDefaultPlugins(): void {
-    this.use(withInterceptors());
+    this.use(withInterceptors(this._config.interceptors));
     this.use(withSerializer(this._config.serializer));
     this.use(withMetrics(this._config.metrics));
     this.use(withInflight(this._config.inflight));
     this.use(withCache(this._config.cache));
     this.use(withRateLimit(this._config.rateLimit));
-    this.use(withQueue());
+    this.use(withQueue(this._config.queue));
     if (this._config.responseConverter !== false) {
       this.use(withParser(this._config.responseConverter));
     }
@@ -120,6 +128,10 @@ export class HyperClient {
     return this._engine.getTransportName();
   }
 
+  private resolveUrl(url: string): string {
+    return this._config.baseURL ? new URL(url, this._config.baseURL).toString() : url;
+  }
+
   /**
    * @ru Выполняет HTTP-запрос через ядро и возвращает распарсенное тело ответа.
    * @en Executes an HTTP request through the core and returns the parsed response body.
@@ -138,18 +150,16 @@ export class HyperClient {
     signal?: AbortSignal,
     metadata?: Record<string, unknown>,
   ): Promise<T> {
+    const requestSignal = signal ?? options?.signal;
     const request = {
       protocol: "rest" as const,
       input: {
+        ...options,
         method,
-        url,
-        headers: options?.headers,
-        query: options?.query,
-        body: options?.body,
-        timeout: options?.timeout,
-        stream: options?.stream,
+        url: this.resolveUrl(url),
+        signal: requestSignal,
       },
-      signal,
+      signal: requestSignal,
       metadata,
     };
     const response = await this._engine.send<RestInput, T, "rest">(request);
@@ -329,16 +339,16 @@ export class HyperClient {
     options?: RestRequestOptions,
     signal?: AbortSignal,
   ): Promise<{ status: number; headers: Record<string, string | string[]> }> {
+    const requestSignal = signal ?? options?.signal;
     const response = await this._engine.send<RestInput, unknown, "rest">({
       protocol: "rest",
       input: {
+        ...options,
         method: "HEAD",
-        url,
-        headers: options?.headers,
-        query: options?.query,
-        timeout: options?.timeout,
+        url: this.resolveUrl(url),
+        signal: requestSignal,
       },
-      signal,
+      signal: requestSignal,
     });
     return {
       status: response.status,
@@ -347,8 +357,8 @@ export class HyperClient {
   }
 
   /**
-   * @ru Выполняет потоковый GET-запрос. Тело ответа возвращается как ReadableStream.
-   * @en Performs a streaming GET request. Response body is returned as a ReadableStream.
+   * @ru Выполняет потоковый GET-запрос. Тело ответа возвращается как асинхронно итерируемый поток.
+   * @en Performs a streaming GET request. Response data is returned as an async-iterable stream.
    * @param url - Request URL.
    * @param options - Optional request options.
    * @param signal - Optional abort signal.
@@ -358,18 +368,21 @@ export class HyperClient {
     url: string,
     options?: RestRequestOptions,
     signal?: AbortSignal,
-  ): Promise<UniversalResponse<unknown>> {
-    return this._engine.send<RestInput, unknown, "rest">({
+  ): Promise<UniversalResponse<AsyncIterable<Uint8Array>>> {
+    const requestSignal = signal ?? options?.signal;
+    return this._engine.send<RestInput, AsyncIterable<Uint8Array>, "rest">({
       protocol: "rest",
       input: {
+        ...options,
         method: "GET",
-        url,
-        headers: options?.headers,
-        query: options?.query,
-        timeout: options?.timeout,
+        url: this.resolveUrl(url),
         stream: true,
+        signal: requestSignal,
       },
-      signal,
+      metadata: {
+        responseType: "stream",
+      },
+      signal: requestSignal,
     });
   }
 
@@ -403,10 +416,17 @@ export class HyperClient {
    * @returns A new HyperClient instance.
    */
   public extend(options: Partial<HyperClientOptions>): HyperClient {
-    return new HyperClient({
+    const config: HyperClientOptions = {
       ...this._config,
       ...options,
-    });
+      retry: {
+        ...this._config.retry,
+        ...options.retry,
+      },
+    };
+    const transport = options.customTransport ?? this._transport;
+
+    return new HyperClient(config, transport);
   }
 
   /**

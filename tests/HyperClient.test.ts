@@ -1,13 +1,35 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { HyperClient, RequestBuilder } from "../src/index.js";
+import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
+import { HyperClient, RequestBuilder, type HyperTransport } from "../src/index.js";
 
-const BASE = "http://127.0.0.1:3000";
+const BASE = inject("benchmarkBaseUrl");
+
+function successfulTransport(onExecute?: (signal?: AbortSignal) => void): HyperTransport {
+  return {
+    async execute(request) {
+      onExecute?.(request.signal);
+      return {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("ok"));
+            controller.close();
+          },
+        }),
+      };
+    },
+  };
+}
 
 describe("HyperClient", () => {
   let client: HyperClient;
 
   beforeAll(() => {
     client = new HyperClient();
+  });
+
+  afterAll(async () => {
+    await client.destroy();
   });
 
   it("performs GET and parses JSON", async () => {
@@ -33,6 +55,32 @@ describe("HyperClient", () => {
     expect(res).toContain("method=GET");
   });
 
+  it("honors shortcut redirect options", async () => {
+    const res = await client.get<string>(`${BASE}/status/302`, {
+      followRedirects: false,
+      responseType: "text",
+    });
+    expect(res).toContain("Redirecting to /json");
+  });
+
+  it("forwards a signal provided in request options", async () => {
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    const signalClient = new HyperClient(
+      { builtInPlugins: false },
+      successfulTransport((signal) => {
+        receivedSignal = signal;
+      }),
+    );
+
+    try {
+      await signalClient.get("http://example.test/resource", { signal: controller.signal });
+      expect(receivedSignal).toBe(controller.signal);
+    } finally {
+      await signalClient.destroy();
+    }
+  });
+
   it("performs POST with body", async () => {
     const res = await client.post<string>(`${BASE}/post`, "hello-body");
     expect(res).toContain("method=POST");
@@ -46,31 +94,76 @@ describe("HyperClient", () => {
   });
 
   it("performs status code requests", async () => {
-    const res404 = await client.get(`${BASE}/status/404`);
-    expect((res404 as any).status).toBe(404);
+    const res404 = await client.get<{ status: number }>(`${BASE}/status/404`);
+    expect(res404.status).toBe(404);
   });
 
-  it("handles empty client config", () => {
-    const c = new HyperClient();
-    expect(c).toBeInstanceOf(HyperClient);
+  it("handles empty client config", async () => {
+    const emptyClient = new HyperClient();
+    expect(emptyClient).toBeInstanceOf(HyperClient);
+    await emptyClient.destroy();
   });
 
-  it("extend creates new client with merged config", () => {
-    const c1 = new HyperClient({ verbose: true });
-    const c2 = c1.extend({ verbose: false });
-    expect(c2).toBeInstanceOf(HyperClient);
-    expect(c2).not.toBe(c1);
+  it("extend preserves an explicitly injected transport", async () => {
+    let calls = 0;
+    const parent = new HyperClient(
+      { builtInPlugins: false },
+      successfulTransport(() => {
+        calls += 1;
+      }),
+    );
+    const child = parent.extend({ verbose: true });
+
+    try {
+      await child.get("http://example.test/resource");
+      expect(calls).toBe(1);
+    } finally {
+      await child.destroy();
+      await parent.destroy();
+    }
   });
 
-  it("create alias works", () => {
-    const c1 = new HyperClient();
-    const c2 = c1.create({ verbose: true });
-    expect(c2).toBeInstanceOf(HyperClient);
+  it("deep-merges retry config in constructor and extend", async () => {
+    const parent = new HyperClient({ retry: { maxRetries: 7 } });
+    const child = parent.extend({ retry: { baseDelay: 250 } });
+
+    expect(parent["_config"].retry).toEqual({
+      maxRetries: 7,
+      baseDelay: 100,
+      maxDelay: 5000,
+      jitter: true,
+    });
+    expect(child["_config"].retry).toEqual({
+      maxRetries: 7,
+      baseDelay: 250,
+      maxDelay: 5000,
+      jitter: true,
+    });
+
+    await child.destroy();
+    await parent.destroy();
   });
 
-  it("stream returns stream response", async () => {
+  it("create alias works", async () => {
+    const parent = new HyperClient();
+    const child = parent.create({ verbose: true });
+    expect(child).toBeInstanceOf(HyperClient);
+    await child.destroy();
+    await parent.destroy();
+  });
+
+  it("stream returns consumable response data", async () => {
     const res = await client.stream(`${BASE}/stream`);
-    expect(res).toBeDefined();
+    const decoder = new TextDecoder();
+    let text = "";
+
+    for await (const chunk of res.data) {
+      text += decoder.decode(chunk, { stream: true });
+    }
+    text += decoder.decode();
+
+    expect(text).toContain("chunk-0");
+    expect(text).toContain("done");
   });
 });
 
@@ -79,6 +172,10 @@ describe("RequestBuilder", () => {
 
   beforeAll(() => {
     client = new HyperClient();
+  });
+
+  afterAll(async () => {
+    await client.destroy();
   });
 
   it("sends GET request", async () => {
@@ -95,13 +192,32 @@ describe("RequestBuilder", () => {
     expect(res).toContain("POST");
   });
 
-  it("sends with query params", async () => {
+  it("sends exact query params", async () => {
     const res = await new RequestBuilder(`${BASE}/get`, client)
       .get()
-      .query({ foo: "bar", baz: "qux" })
+      .query({ foo: "bar", tag: ["a", "b"], skipped: null })
       .text()
       .send<string>();
-    expect(res).toContain("query=");
+    expect(res).toContain("foo=bar");
+    expect(res).toContain("tag=a");
+    expect(res).toContain("tag=b");
+    expect(res).not.toContain("skipped=");
+  });
+
+  it("sends query params with a relative URL", async () => {
+    const relativeClient = new HyperClient({ baseURL: BASE });
+
+    try {
+      const res = await relativeClient
+        .request("/get")
+        .query({ foo: "bar", page: 2 })
+        .text()
+        .send<string>();
+      expect(res).toContain("foo=bar");
+      expect(res).toContain("page=2");
+    } finally {
+      await relativeClient.destroy();
+    }
   });
 
   it("passes response type metadata to the request pipeline", async () => {

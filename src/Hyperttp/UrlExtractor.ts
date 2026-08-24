@@ -20,17 +20,25 @@ import type { UrlExtractorInterface, UrlPattern } from "../Types/url-extractor.j
  * ]);
  *
  * // Extract track ID
- * const trackId = extractor.extractId<number>(
+ * const trackId = extractor.extractId(
  *   "https://music.yandex.ru/track/25063569",
  *   "track",
- *   "yandex"
+ *   "yandex",
+ * ).id;
+ *
+ * // Explicit numeric conversion for safe decimal values
+ * const numericTrackId = extractor.extractId(
+ *   "https://music.yandex.ru/track/25063569",
+ *   "track",
+ *   "yandex",
+ *   true,
  * ).id;
  *
  * // Extract playlist info
- * const playlist = extractor.extractId<string | number>(
+ * const playlist = extractor.extractId(
  *   "https://music.yandex.ru/playlists/ar123456",
  *   "playlist",
- *   "yandex"
+ *   "yandex",
  * );
  * ```
  */
@@ -66,17 +74,22 @@ export default class UrlExtractor implements UrlExtractorInterface {
    * @throws Will throw if the URL does not match the pattern or required groups are missing
    * @returns Object with extracted group values
    */
-  private extractGroups<T extends string>(url: string, pattern: UrlPattern<T>): Record<T, string> {
+  private extractGroups<T extends string>(
+    url: string,
+    pattern: UrlPattern<T>,
+  ): Record<T, string> | undefined {
     pattern.regex.lastIndex = 0;
     const match = pattern.regex.exec(url)?.groups;
     pattern.regex.lastIndex = 0;
 
-    if (!match) throw new Error(`Invalid ${pattern.entity} URL: ${url}`);
+    if (!match) return undefined;
 
     return pattern.groupNames.reduce(
       (acc, name) => {
         const value = match[name];
-        if (!value) throw new Error(`Missing "${name}" in ${pattern.entity} URL: ${url}`);
+        if (value === undefined) {
+          throw new Error(`Missing "${name}" in ${pattern.entity} URL pattern`);
+        }
         acc[name] = value;
         return acc;
       },
@@ -104,34 +117,52 @@ export default class UrlExtractor implements UrlExtractorInterface {
    * const numericId = Number(result.id); // 25063569
    * ```
    */
-  extractId<T extends string | number>(
+  extractId(url: string, entity: string, platform: string): Record<string, string>;
+  extractId(
     url: string,
     entity: string,
     platform: string,
-    castNumbers = true,
-  ): Record<string, T> {
-    const patterns = this.patterns[platform]?.filter((p) => p.entity === entity);
-    if (!patterns?.length)
+    castNumbers: false,
+  ): Record<string, string>;
+  extractId(
+    url: string,
+    entity: string,
+    platform: string,
+    castNumbers: true,
+  ): Record<string, string | number>;
+  extractId(
+    url: string,
+    entity: string,
+    platform: string,
+    castNumbers: boolean,
+  ): Record<string, string | number>;
+  extractId(
+    url: string,
+    entity: string,
+    platform: string,
+    castNumbers = false,
+  ): Record<string, string | number> {
+    const patterns = this.patterns[platform]?.filter((pattern) => pattern.entity === entity);
+    if (!patterns?.length) {
       throw new Error(`No patterns registered for "${entity}" on platform "${platform}"`);
+    }
 
     for (const pattern of patterns) {
-      try {
-        const extracted = this.extractGroups(url, pattern);
+      const extracted = this.extractGroups(url, pattern);
+      if (!extracted) continue;
 
-        const result: Record<string, any> = {};
-        for (const key in extracted) {
-          const value = extracted[key];
-          if (castNumbers && !isNaN(Number(value))) {
-            result[key] = Number(value);
-          } else {
-            result[key] = value;
-          }
-        }
+      const result: Record<string, string | number> = {};
+      for (const [key, value] of Object.entries(extracted)) {
+        const numericValue = Number(value);
+        const isDecimal = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value);
+        const isSafeNumber =
+          Number.isFinite(numericValue) &&
+          (!Number.isInteger(numericValue) || Number.isSafeInteger(numericValue));
 
-        return result as Record<string, T>;
-      } catch {
-        //
+        result[key] = castNumbers && isDecimal && isSafeNumber ? numericValue : value;
       }
+
+      return result;
     }
 
     throw new Error(`Invalid ${entity} URL for platform "${platform}": ${url}`);

@@ -17,6 +17,7 @@ export interface RequestConfig {
 /**
  * @ru Представляет HTTP-запрос с настраиваемой схемой, хостом, портом, путём, заголовками, параметрами запроса и телом. Предоставляет методы для построения и манипуляции запросом.
  * @en Represents an HTTP request with configurable scheme, host, port, path, headers, query, and body data. Provides methods to build and manipulate the request.
+ * @deprecated Use `HyperClient.request()` and `RequestBuilder` for new code.
  */
 export default class Request {
   private scheme: string;
@@ -43,7 +44,7 @@ export default class Request {
     this.path = config.path ?? "";
     this._headers = config.headers ?? {};
     this.query = config.query ?? {};
-    this._bodyData = config.bodyData ?? {};
+    this._bodyData = config.bodyData;
     this._signal = undefined;
     this._meta = config.meta ?? {};
   }
@@ -270,7 +271,8 @@ export default class Request {
    * @returns Fetch-compatible request init object.
    */
   toFetchInit(): RequestInit {
-    const body = this.getBodyDataString();
+    const supportsBody = this.method !== "GET" && this.method !== "HEAD";
+    const body = supportsBody ? this.getBodyDataString() : "";
 
     return {
       method: this.method,
@@ -380,16 +382,27 @@ export default class Request {
    * @en Creates a deep copy of the current request.
    * @returns Cloned request.
    */
+  private cloneValue<T>(value: T, fallback: T): T {
+    try {
+      return structuredClone(value);
+    } catch {
+      return fallback;
+    }
+  }
+
   clone(): Request {
     const req = new Request({
       scheme: this.scheme,
       host: this.host,
       port: this.port,
       path: this.path || "",
-      headers: { ...this._headers },
-      query: { ...this.query },
-      bodyData: this.isPlainObject(this._bodyData) ? { ...this._bodyData } : this._bodyData,
-      meta: { ...this._meta },
+      headers: this.cloneValue(this._headers, { ...this._headers }),
+      query: this.cloneValue(this.query, { ...this.query }),
+      bodyData: this.cloneValue(
+        this._bodyData,
+        this.isPlainObject(this._bodyData) ? { ...this._bodyData } : this._bodyData,
+      ),
+      meta: this.cloneValue(this._meta, { ...this._meta }),
     })
       .setMethod(this.method)
       .setBodyType(this.bodyType);
@@ -406,21 +419,8 @@ export default class Request {
    * @returns New request instance.
    */
   withQuery(query: RequestQuery): Request {
-    const req = new Request({
-      scheme: this.scheme,
-      host: this.host,
-      port: this.port,
-      path: this.path,
-      headers: { ...this._headers },
-      query: { ...this.query, ...query },
-      bodyData: this._bodyData,
-      meta: { ...this._meta },
-    })
-      .setMethod(this.method)
-      .setBodyType(this.bodyType);
-
-    if (this._signal) req.setSignal(this._signal);
-
+    const req = this.clone();
+    req.setQuery({ ...req.query, ...structuredClone(query) });
     return req;
   }
 }
@@ -428,6 +428,7 @@ export default class Request {
 /**
  * @ru PreparedRequest исправно наследует измененное свойство. Создаёт запрос из базового URL.
  * @en PreparedRequest correctly inherits changed properties. Creates a request from a base URL.
+ * @deprecated Use `HyperClient.request()` and `RequestBuilder` for new code.
  */
 export class PreparedRequest extends Request {
   /**
