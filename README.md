@@ -52,6 +52,8 @@ specialized. See [Choosing a client](#choosing-a-client) for an objective compar
 
 ## Installation
 
+Node.js usage requires Node.js 22.19.0 or newer because Hyperttp uses Undici 8.
+
 ```bash
 npm install hyperttp
 ```

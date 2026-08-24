@@ -53,6 +53,8 @@ Hyperttp не лучше любого клиента во всех сценар�
 
 ## Установка
 
+Для запуска в Node.js требуется Node.js 22.19.0 или новее, поскольку Hyperttp использует Undici 8.
+
 ```bash
 npm install hyperttp
 ```

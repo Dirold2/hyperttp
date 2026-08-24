@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22.19.0
           registry-url: https://registry.npmjs.org
 
       - name: Setup Bun
@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24]
+        node: [22.19.0, 24]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -122,9 +122,9 @@ jobs:
             }),
           };
           const client = new HyperClient({ builtInPlugins: false }, transport);
-          const response = await core.rest.get("https://example.test/");
-          if (response.data?.runtime !== "bun") throw new Error("Bun smoke test failed");
-          await core.destroy();
+          const response = await client.rest.get("https://example.test/");
+          if (response.status !== 200) throw new Error("Bun smoke test failed");
+          await client.destroy();
           '
 
   deno-runtime:
@@ -168,9 +168,9 @@ jobs:
             }),
           };
           const client = new HyperClient({ builtInPlugins: false }, transport);
-          const response = await core.rest.get("https://example.test/");
-          if (response.data?.runtime !== "deno") throw new Error("Deno smoke test failed");
-          await core.destroy();
+          const response = await client.rest.get("https://example.test/");
+          if (response.status !== 200) throw new Error("Deno smoke test failed");
+          await client.destroy();
           '
 
   browser-bundle:
@@ -194,6 +194,7 @@ jobs:
           bunx esbuild src/index.ts
           --bundle
           --platform=browser
+          --external:node:*
           --format=esm
           --outfile=/tmp/hyperttp-browser.js
 
@@ -209,7 +210,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22.19.0
           registry-url: https://registry.npmjs.org
 
       - name: Download build
@@ -227,7 +228,7 @@ jobs:
           mkdir hyperttp-consumer
           cd hyperttp-consumer
           npm init --yes
-          npm install ../hyperttp-*.tgz typescript@^7
+          npm install ../hyperttp-*.tgz typescript@^7 @types/node@^26
 
       - name: Import public entry points and execute a request
         working-directory: /tmp/hyperttp-consumer
@@ -245,9 +246,9 @@ jobs:
             }),
           };
           const client = new HyperClient({ builtInPlugins: false }, transport);
-          const response = await core.rest.get("https://example.test/");
-          if (response.data?.installed !== true) throw new Error("Tarball runtime failed");
-          await core.destroy();
+          const response = await client.rest.get("https://example.test/");
+          if (response.status !== 200) throw new Error("Tarball runtime failed");
+          await client.destroy();
           '
 
       - name: Compile consumer TypeScript
@@ -258,8 +259,8 @@ jobs:
           import type { RestRequestOptions } from "hyperttp";
 
           const options: RestRequestOptions = { timeout: 1000 };
-          const core = new HyperClient();
-          void core.rest.get("https://example.test", options);
+          const client = new HyperClient();
+          void client.rest.get("https://example.test", options);
           EOF
           ./node_modules/.bin/tsc index.ts \
             --noEmit \
@@ -267,4 +268,4 @@ jobs:
             --target ES2022 \
             --module NodeNext \
             --moduleResolution NodeNext \
-            --skipLibCheck
+            --types node

@@ -22,6 +22,9 @@
 - Preserved REST options such as redirect settings and request signals across shortcut, HEAD, and stream dispatch paths.
 - Forwarded configured interceptor and queue options to their built-in plugins.
 
+- Aligned CI and package metadata with Undici 8's Node.js 22.19.0 minimum.
+- Corrected Bun/Deno/package smoke-test client references and browser bundling of optional Node imports.
+
 ### Testing
 
 - Added GitHub Actions coverage for quality checks, supported Node.js versions, Bun, Deno,
