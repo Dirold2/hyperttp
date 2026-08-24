@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "sideEffects": false,
@@ -48,7 +48,7 @@
     "@hyperttp/metrics": "^2.0.0",
     "@hyperttp/parser": "^2.0.1",
     "@hyperttp/queue": "^2.0.0",
-    "@hyperttp/ratelimit": "^2.0.0",
+    "@hyperttp/ratelimit": "^2.0.1",
     "@hyperttp/serializer": "^2.0.0",
     "@hyperttp/transport-undici": "^0.3.1",
     "@hyperttp/types": "^0.3.0",
@@ -71,6 +71,7 @@
   },
   "scripts": {
     "build": "tsc && esbuild 'dist/**/*.js' --outdir=dist --allow-overwrite --minify --sourcemap && d-build",
+    "lock:deno": "deno check --node-modules-dir=auto --minimum-dependency-age=0 --lock=deno.lock --frozen=false dist/index.js",
     "dist": "d-dist",
     "deploy": "npm run build && npm run dist",
     "pub": "d-publish",

@@ -36,6 +36,11 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.x
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -152,11 +157,11 @@ jobs:
         run: npm run build
 
       - name: Check built public entry
-        run: deno check --node-modules-dir=auto --minimum-dependency-age=0 dist/index.js
+        run: deno check --node-modules-dir=auto --minimum-dependency-age=0 --lock=deno.lock --frozen=true dist/index.js
 
       - name: Run Deno smoke test
         run: >-
-          deno eval --node-modules-dir=auto --minimum-dependency-age=0 '
+          deno eval --node-modules-dir=auto --minimum-dependency-age=0 --lock=deno.lock --frozen=true '
           const { HyperClient } = await import("./dist/index.js");
           const transport = {
             protocols: ["rest"],
@@ -167,7 +172,7 @@ jobs:
               body: new TextEncoder().encode("{\"runtime\":\"deno\"}"),
             }),
           };
-          const client = new HyperClient({ builtInPlugins: false }, transport);
+          const client = new HyperClient({}, transport);
           const response = await client.rest.get("https://example.test/");
           if (response.status !== 200) throw new Error("Deno smoke test failed");
           await client.destroy();
@@ -245,7 +250,7 @@ jobs:
               body: new TextEncoder().encode("{\"installed\":true}"),
             }),
           };
-          const client = new HyperClient({ builtInPlugins: false }, transport);
+          const client = new HyperClient({}, transport);
           const response = await client.rest.get("https://example.test/");
           if (response.status !== 200) throw new Error("Tarball runtime failed");
           await client.destroy();

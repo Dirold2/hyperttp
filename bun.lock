@@ -12,7 +12,7 @@
         "@hyperttp/metrics": "^2.0.0",
         "@hyperttp/parser": "^2.0.1",
         "@hyperttp/queue": "^2.0.0",
-        "@hyperttp/ratelimit": "^2.0.0",
+        "@hyperttp/ratelimit": "^2.0.1",
         "@hyperttp/serializer": "^2.0.0",
         "@hyperttp/transport-undici": "^0.3.1",
         "@hyperttp/types": "^0.3.0",
@@ -114,7 +114,7 @@
 
     "@hyperttp/queue": ["@hyperttp/queue@2.0.0", "", { "peerDependencies": { "@hyperttp/types": "^0.3.0" } }, "sha512-Q/ButhhQZdLlstfztG1vpecrFza6ElyT/lZQxOPa9JYjbAnpcFZoN2KIyDzRD1UxuY68+nt4vXk7RdFJKnGwDw=="],
 
-    "@hyperttp/ratelimit": ["@hyperttp/ratelimit@2.0.0", "", { "peerDependencies": { "@hyperttp/types": "^0.3.0" } }, "sha512-6PWeM3QMkU5EGimnHmg5tEyTKXNIqSMxfh/ZsDxqiyi5NnqYwmQDI/yteDHV3OEk7h4/c2M1xebJxNQc3IhppA=="],
+    "@hyperttp/ratelimit": ["@hyperttp/ratelimit@2.0.1", "", { "peerDependencies": { "@hyperttp/types": "^0.3.0" } }, "sha512-txuB0iM4yhScX2/rFSwKBCcDA+fiRfSYZESUK5unegdKwQUSsE3N4GLPZjoUlIvWZcI4b7O4LT769Hm/DALEBA=="],
 
     "@hyperttp/serializer": ["@hyperttp/serializer@2.0.0", "", { "peerDependencies": { "@hyperttp/types": "^0.3.0" } }, "sha512-Pg3jRKaJr2ABmkLLKr1XnKwSk41IXVCrGb4JTFbYlfbr9DOGT5PvOTMbMpHIaFjSlQHtEr1jWNdsy/05Pu8zyg=="],
 

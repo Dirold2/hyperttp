@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.2] - 2026-08-25
+
+### Fixed
+
+- Fixed Node.js ESM interop with both CommonJS and ESM releases of `@hyperttp/ratelimit`.
+
 ## [0.5.1] - 2026-08-24
 
 ### Added

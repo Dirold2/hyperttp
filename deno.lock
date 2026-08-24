@@ -9,7 +9,7 @@
     "npm:@hyperttp/metrics@2": "2.0.0_@hyperttp+types@0.3.0",
     "npm:@hyperttp/parser@^2.0.1": "2.0.1_@hyperttp+types@0.3.0",
     "npm:@hyperttp/queue@2": "2.0.0_@hyperttp+types@0.3.0",
-    "npm:@hyperttp/ratelimit@2": "2.0.0_@hyperttp+types@0.3.0",
+    "npm:@hyperttp/ratelimit@^2.0.1": "2.0.1_@hyperttp+types@0.3.0",
     "npm:@hyperttp/serializer@2": "2.0.0_@hyperttp+types@0.3.0",
     "npm:@hyperttp/transport-undici@~0.3.1": "0.3.1_@hyperttp+types@0.3.0_hcacher@0.2.0_undici@8.10.0",
     "npm:@hyperttp/types@0.3": "0.3.0",
@@ -231,8 +231,8 @@
         "@hyperttp/types"
       ]
     },
-    "@hyperttp/ratelimit@2.0.0_@hyperttp+types@0.3.0": {
-      "integrity": "sha512-6PWeM3QMkU5EGimnHmg5tEyTKXNIqSMxfh/ZsDxqiyi5NnqYwmQDI/yteDHV3OEk7h4/c2M1xebJxNQc3IhppA==",
+    "@hyperttp/ratelimit@2.0.1_@hyperttp+types@0.3.0": {
+      "integrity": "sha512-txuB0iM4yhScX2/rFSwKBCcDA+fiRfSYZESUK5unegdKwQUSsE3N4GLPZjoUlIvWZcI4b7O4LT769Hm/DALEBA==",
       "dependencies": [
         "@hyperttp/types"
       ]
@@ -1358,7 +1358,7 @@
         "npm:@hyperttp/metrics@2",
         "npm:@hyperttp/parser@^2.0.1",
         "npm:@hyperttp/queue@2",
-        "npm:@hyperttp/ratelimit@2",
+        "npm:@hyperttp/ratelimit@^2.0.1",
         "npm:@hyperttp/serializer@2",
         "npm:@hyperttp/transport-undici@~0.3.1",
         "npm:@hyperttp/types@0.3",
