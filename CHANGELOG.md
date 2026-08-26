@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.4] - 2026-08-27
+
+### Changed
+
+- Removed the project's direct `undici` and `@hyperttp/transport-undici` dependency.
+
 ## [0.5.3] - 2026-08-26
 
 ### Changed
