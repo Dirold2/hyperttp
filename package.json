@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "sideEffects": false,
@@ -41,7 +41,7 @@
     "url": "git+https://github.com/dirold2/hyperttp.git"
   },
   "dependencies": {
-    "@hyperttp/cache": "^2.0.0",
+    "@hyperttp/cache": "^2.0.1",
     "@hyperttp/core": "^2.0.0",
     "@hyperttp/inflight": "^2.0.0",
     "@hyperttp/interceptors": "^2.0.0",
@@ -52,7 +52,6 @@
     "@hyperttp/serializer": "^2.0.0",
     "@hyperttp/transport-undici": "^0.3.1",
     "@hyperttp/types": "^0.3.0",
-    "hcacher": "^0.2.0",
     "undici": "^8.10.0"
   },
   "devDependencies": {

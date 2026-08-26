@@ -5,7 +5,7 @@
     "": {
       "name": "hyperttp",
       "dependencies": {
-        "@hyperttp/cache": "^2.0.0",
+        "@hyperttp/cache": "^2.0.1",
         "@hyperttp/core": "^2.0.0",
         "@hyperttp/inflight": "^2.0.0",
         "@hyperttp/interceptors": "^2.0.0",
@@ -16,7 +16,6 @@
         "@hyperttp/serializer": "^2.0.0",
         "@hyperttp/transport-undici": "^0.3.1",
         "@hyperttp/types": "^0.3.0",
-        "hcacher": "^0.2.0",
         "undici": "^8.10.0",
       },
       "devDependencies": {
@@ -100,7 +99,7 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.2", "", { "os": "win32", "cpu": "x64" }, "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g=="],
 
-    "@hyperttp/cache": ["@hyperttp/cache@2.0.0", "", { "peerDependencies": { "@hyperttp/types": "^0.3.0", "hcacher": "^0.2.0" } }, "sha512-jhIp3C4RVVAhiWoLRjMMfCPosDVYBXzANshSy1pMRs2W06KHD8Rd6v7d8fvFF9Z6wt8n3sCJqgznOk1CUksPKQ=="],
+    "@hyperttp/cache": ["@hyperttp/cache@2.0.1", "", { "peerDependencies": { "@hyperttp/types": "^0.3.0", "hcacher": "^0.3.0" } }, "sha512-HjMw2gb4CqHUw6R2Sj6YhJwsPuPQXtAeiHOLA5a1de6iRnliE3Xrw7z/khWyUzaOCTN3LZbWbLJKVXwzvNVdcA=="],
 
     "@hyperttp/core": ["@hyperttp/core@2.0.0", "", { "peerDependencies": { "@hyperttp/types": "^0.3.0" } }, "sha512-+I2DKpWarj44LLx8d0JqNz2AH7oO84zVJEV80V1VyCHcgsVuDaEJGROwkuCNgHY80rzgpMNHYlZHbecD1S1AYw=="],
 

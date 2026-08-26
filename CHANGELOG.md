@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.3] - 2026-08-26
+
+### Changed
+
+- Updated `@hyperttp/cache` ^2.0.0 → ^2.0.1 and removed the project's direct `hcacher` dependency.
+
 ## [0.5.2] - 2026-08-25
 
 ### Fixed
