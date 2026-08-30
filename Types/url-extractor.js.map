@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["url-extractor.js"],
+  "sourcesContent": ["export {};\n//# sourceMappingURL=url-extractor.js.map"],
+  "mappings": "aAAA",
+  "names": []
+}
