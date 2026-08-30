@@ -5,7 +5,7 @@ import type {
   HyperProtocols,
   UniversalResponse,
 } from "@hyperttp/types";
-import { HyperCore, KNOWN_PROTOCOLS, RestProtocol } from "@hyperttp/core";
+import { deepMerge, HyperCore, KNOWN_PROTOCOLS, RestProtocol } from "@hyperttp/core";
 import { withCache } from "@hyperttp/cache";
 import { withInflight } from "@hyperttp/inflight";
 import { withInterceptors } from "@hyperttp/interceptors";
@@ -17,6 +17,7 @@ import { withSerializer } from "@hyperttp/serializer";
 import { defaultConfig } from "../defaultConfig.js";
 import { RequestBuilder, type ResponseType } from "../Utils/RequestBuilder.js";
 import type { HttpMethod, RestInput, RestRequestOptions } from "@hyperttp/core/rest";
+import { withCrypto } from "@hyperttp/crypto";
 
 export type ShortcutRequestOptions = RestRequestOptions & {
   responseType?: ResponseType;
@@ -47,6 +48,57 @@ export class HyperClient {
   private readonly _config: HyperClientOptions;
   private readonly _transport?: HyperTransport;
 
+  private normalizeShortcutOptions(
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType,
+    body?: unknown,
+  ): ShortcutRequestOptions | undefined {
+    const options =
+      typeof optionsOrResponseType === "string"
+        ? { responseType: optionsOrResponseType }
+        : optionsOrResponseType;
+
+    return body === undefined ? options : { ...options, body };
+  }
+
+  private isAbortSignal(value: unknown): value is AbortSignal {
+    return typeof AbortSignal !== "undefined" && value instanceof AbortSignal;
+  }
+
+  private normalizeNoBodyShortcutOptions(
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
+  ): { options: ShortcutRequestOptions | undefined; signal?: AbortSignal } {
+    if (this.isAbortSignal(optionsOrResponseType)) {
+      return { options: undefined, signal: optionsOrResponseType };
+    }
+
+    return { options: this.normalizeShortcutOptions(optionsOrResponseType) };
+  }
+
+  private normalizeBodyShortcutOptions(
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
+    body?: unknown,
+  ): { options: ShortcutRequestOptions | undefined; signal?: AbortSignal } {
+    if (this.isAbortSignal(optionsOrResponseType)) {
+      return {
+        options: this.normalizeShortcutOptions(undefined, body),
+        signal: optionsOrResponseType,
+      };
+    }
+
+    return { options: this.normalizeShortcutOptions(optionsOrResponseType, body) };
+  }
+
+  private combineSignals(
+    optionSignal?: AbortSignal,
+    signal?: AbortSignal,
+  ): AbortSignal | undefined {
+    if (!optionSignal || !signal || optionSignal === signal) {
+      return signal ?? optionSignal;
+    }
+
+    return AbortSignal.any([optionSignal, signal]);
+  }
+
   /**
    * @ru Создаёт экземпляр HyperClient и регистрирует REST-протокол.
    * Плагины передаются через config.plugins или регистрируются вручную через use().
@@ -55,14 +107,10 @@ export class HyperClient {
    * @param config - Client configuration options.
    */
   constructor(config: HyperClientOptions = defaultConfig, transport?: HyperTransport) {
-    this._config = {
-      ...defaultConfig,
-      ...config,
-      retry: {
-        ...defaultConfig.retry,
-        ...config.retry,
-      },
-    };
+    this._config = deepMerge(
+      defaultConfig as Record<string, unknown>,
+      config as Record<string, unknown>,
+    ) as HyperClientOptions;
     this._transport = transport;
 
     this._engine = new HyperCore(this._config, transport);
@@ -86,6 +134,7 @@ export class HyperClient {
     this.use(withCache(this._config.cache));
     this.use(withRateLimit(this._config.rateLimit));
     this.use(withQueue(this._config.queue));
+    this.use(withCrypto());
     if (this._config.responseConverter !== false) {
       this.use(withParser(this._config.responseConverter));
     }
@@ -101,7 +150,7 @@ export class HyperClient {
   private exposeProtocolNamespaces(): void {
     for (const protocol of KNOWN_PROTOCOLS) {
       Object.defineProperty(this, protocol, {
-        configurable: false,
+        configurable: true,
         enumerable: true,
         get: () => (this._engine as HyperCore & Record<string, unknown>)[protocol],
       });
@@ -150,7 +199,7 @@ export class HyperClient {
     signal?: AbortSignal,
     metadata?: Record<string, unknown>,
   ): Promise<T> {
-    const requestSignal = signal ?? options?.signal;
+    const requestSignal = this.combineSignals(options?.signal, signal);
     const request = {
       protocol: "rest" as const,
       input: {
@@ -191,6 +240,7 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise resolving to the parsed response body.
    */
+  public get<T = unknown>(url: string, signal?: AbortSignal): Promise<T>;
   public get<T = unknown>(
     url: string,
     responseType: ResponseType,
@@ -203,14 +253,11 @@ export class HyperClient {
   ): Promise<T>;
   public get<T = unknown>(
     url: string,
-    optionsOrResponseType?: ShortcutRequestOptions | ResponseType,
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
     signal?: AbortSignal,
   ): Promise<T> {
-    const options =
-      typeof optionsOrResponseType === "string"
-        ? { responseType: optionsOrResponseType }
-        : optionsOrResponseType;
-    return this.executeShortcut<T>("GET", url, options, signal);
+    const normalized = this.normalizeNoBodyShortcutOptions(optionsOrResponseType);
+    return this.executeShortcut<T>("GET", url, normalized.options, signal ?? normalized.signal);
   }
 
   /**
@@ -223,17 +270,27 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise resolving to the parsed response body.
    */
+  public post<T = unknown>(url: string, body?: unknown, signal?: AbortSignal): Promise<T>;
   public post<T = unknown>(
     url: string,
     body?: unknown,
-    optionsOrResponseType?: ShortcutRequestOptions | ResponseType,
+    responseType?: ResponseType,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public post<T = unknown>(
+    url: string,
+    body?: unknown,
+    options?: ShortcutRequestOptions,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public post<T = unknown>(
+    url: string,
+    body?: unknown,
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
     signal?: AbortSignal,
   ): Promise<T> {
-    const options =
-      typeof optionsOrResponseType === "string"
-        ? { responseType: optionsOrResponseType, body }
-        : { ...optionsOrResponseType, body };
-    return this.executeShortcut<T>("POST", url, options, signal);
+    const normalized = this.normalizeBodyShortcutOptions(optionsOrResponseType, body);
+    return this.executeShortcut<T>("POST", url, normalized.options, signal ?? normalized.signal);
   }
 
   /**
@@ -246,17 +303,27 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise resolving to the parsed response body.
    */
+  public put<T = unknown>(url: string, body?: unknown, signal?: AbortSignal): Promise<T>;
   public put<T = unknown>(
     url: string,
     body?: unknown,
-    optionsOrResponseType?: ShortcutRequestOptions | ResponseType,
+    responseType?: ResponseType,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public put<T = unknown>(
+    url: string,
+    body?: unknown,
+    options?: ShortcutRequestOptions,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public put<T = unknown>(
+    url: string,
+    body?: unknown,
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
     signal?: AbortSignal,
   ): Promise<T> {
-    const options =
-      typeof optionsOrResponseType === "string"
-        ? { responseType: optionsOrResponseType, body }
-        : { ...optionsOrResponseType, body };
-    return this.executeShortcut<T>("PUT", url, options, signal);
+    const normalized = this.normalizeBodyShortcutOptions(optionsOrResponseType, body);
+    return this.executeShortcut<T>("PUT", url, normalized.options, signal ?? normalized.signal);
   }
 
   /**
@@ -269,17 +336,27 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise resolving to the parsed response body.
    */
+  public patch<T = unknown>(url: string, body?: unknown, signal?: AbortSignal): Promise<T>;
   public patch<T = unknown>(
     url: string,
     body?: unknown,
-    optionsOrResponseType?: ShortcutRequestOptions | ResponseType,
+    responseType?: ResponseType,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public patch<T = unknown>(
+    url: string,
+    body?: unknown,
+    options?: ShortcutRequestOptions,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public patch<T = unknown>(
+    url: string,
+    body?: unknown,
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
     signal?: AbortSignal,
   ): Promise<T> {
-    const options =
-      typeof optionsOrResponseType === "string"
-        ? { responseType: optionsOrResponseType, body }
-        : { ...optionsOrResponseType, body };
-    return this.executeShortcut<T>("PATCH", url, options, signal);
+    const normalized = this.normalizeBodyShortcutOptions(optionsOrResponseType, body);
+    return this.executeShortcut<T>("PATCH", url, normalized.options, signal ?? normalized.signal);
   }
 
   /**
@@ -291,16 +368,24 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise resolving to the parsed response body.
    */
+  public delete<T = unknown>(url: string, signal?: AbortSignal): Promise<T>;
   public delete<T = unknown>(
     url: string,
-    optionsOrResponseType?: ShortcutRequestOptions | ResponseType,
+    responseType: ResponseType,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public delete<T = unknown>(
+    url: string,
+    options?: ShortcutRequestOptions,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public delete<T = unknown>(
+    url: string,
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
     signal?: AbortSignal,
   ): Promise<T> {
-    const options =
-      typeof optionsOrResponseType === "string"
-        ? { responseType: optionsOrResponseType }
-        : optionsOrResponseType;
-    return this.executeShortcut<T>("DELETE", url, options, signal);
+    const normalized = this.normalizeNoBodyShortcutOptions(optionsOrResponseType);
+    return this.executeShortcut<T>("DELETE", url, normalized.options, signal ?? normalized.signal);
   }
 
   /**
@@ -313,17 +398,27 @@ export class HyperClient {
    * @param signal - Optional abort signal.
    * @returns Promise resolving to the parsed response body.
    */
+  public options<T = unknown>(url: string, body?: unknown, signal?: AbortSignal): Promise<T>;
   public options<T = unknown>(
     url: string,
     body?: unknown,
-    optionsOrResponseType?: ShortcutRequestOptions | ResponseType,
+    responseType?: ResponseType,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public options<T = unknown>(
+    url: string,
+    body?: unknown,
+    options?: ShortcutRequestOptions,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public options<T = unknown>(
+    url: string,
+    body?: unknown,
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
     signal?: AbortSignal,
   ): Promise<T> {
-    const options =
-      typeof optionsOrResponseType === "string"
-        ? { responseType: optionsOrResponseType, body }
-        : { ...optionsOrResponseType, body };
-    return this.executeShortcut<T>("OPTIONS", url, options, signal);
+    const normalized = this.normalizeBodyShortcutOptions(optionsOrResponseType, body);
+    return this.executeShortcut<T>("OPTIONS", url, normalized.options, signal ?? normalized.signal);
   }
 
   /**
@@ -339,7 +434,7 @@ export class HyperClient {
     options?: RestRequestOptions,
     signal?: AbortSignal,
   ): Promise<{ status: number; headers: Record<string, string | string[]> }> {
-    const requestSignal = signal ?? options?.signal;
+    const requestSignal = this.combineSignals(options?.signal, signal);
     const response = await this._engine.send<RestInput, unknown, "rest">({
       protocol: "rest",
       input: {
@@ -369,7 +464,7 @@ export class HyperClient {
     options?: RestRequestOptions,
     signal?: AbortSignal,
   ): Promise<UniversalResponse<AsyncIterable<Uint8Array>>> {
-    const requestSignal = signal ?? options?.signal;
+    const requestSignal = this.combineSignals(options?.signal, signal);
     return this._engine.send<RestInput, AsyncIterable<Uint8Array>, "rest">({
       protocol: "rest",
       input: {
@@ -386,17 +481,27 @@ export class HyperClient {
     });
   }
 
+  public query<T = unknown>(url: string, body?: unknown, signal?: AbortSignal): Promise<T>;
   public query<T = unknown>(
     url: string,
     body?: unknown,
-    optionsOrResponseType?: ShortcutRequestOptions | ResponseType,
+    responseType?: ResponseType,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public query<T = unknown>(
+    url: string,
+    body?: unknown,
+    options?: ShortcutRequestOptions,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  public query<T = unknown>(
+    url: string,
+    body?: unknown,
+    optionsOrResponseType?: ShortcutRequestOptions | ResponseType | AbortSignal,
     signal?: AbortSignal,
   ): Promise<T> {
-    const options =
-      typeof optionsOrResponseType === "string"
-        ? { responseType: optionsOrResponseType, body }
-        : { ...optionsOrResponseType, body };
-    return this.executeShortcut<T>("QUERY", url, options, signal);
+    const normalized = this.normalizeBodyShortcutOptions(optionsOrResponseType, body);
+    return this.executeShortcut<T>("QUERY", url, normalized.options, signal ?? normalized.signal);
   }
 
   /**
@@ -416,14 +521,10 @@ export class HyperClient {
    * @returns A new HyperClient instance.
    */
   public extend(options: Partial<HyperClientOptions>): HyperClient {
-    const config: HyperClientOptions = {
-      ...this._config,
-      ...options,
-      retry: {
-        ...this._config.retry,
-        ...options.retry,
-      },
-    };
+    const config = deepMerge(
+      this._config as Record<string, unknown>,
+      options as Record<string, unknown>,
+    ) as HyperClientOptions;
     const transport = options.customTransport ?? this._transport;
 
     return new HyperClient(config, transport);

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.5] - 2026-08-29
+
+### Changed
+
+- Added the built-in `withCrypto()` plugin, which adds a SHA-256 `Digest` header to requests with a body.
+- `HyperClient.extend()` now deep-merges nested plugin configuration.
+- Consolidated shortcut-method option and response-type argument normalization.
+- Added typed direct `AbortSignal` overloads for all shortcut methods.
+
+### Fixed
+
+- Preserved `options.body` when no separate shortcut-method body argument is provided.
+- Combined shortcut-method and request-option cancellation signals with `AbortSignal.any()`.
+- Preserved direct `AbortSignal` arguments in `get()` and `delete()`.
+- Allowed exposed protocol namespaces to be redefined at runtime.
+
 ## [0.5.4] - 2026-08-27
 
 ### Changed

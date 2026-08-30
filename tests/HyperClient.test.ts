@@ -87,6 +87,157 @@ describe("HyperClient", () => {
     expect(res).toContain("hello-body");
   });
 
+  it("adds a SHA-256 Digest header for requests with a body", async () => {
+    let digest: string | string[] | undefined;
+    const cryptoClient = new HyperClient(
+      {},
+      {
+        async execute(request) {
+          digest = request.headers.digest;
+          return {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+            body: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode("ok"));
+                controller.close();
+              },
+            }),
+          };
+        },
+      },
+    );
+
+    try {
+      await cryptoClient.post("http://example.test/resource", "hello-body");
+      expect(digest).toBe("sha-256=:cgwC2aoQz0zjMSckFIJqaLK/Z+CWziQx8cpgcGDwsK0=:");
+    } finally {
+      await cryptoClient.destroy();
+    }
+  });
+
+  it.each(["post", "put", "patch", "options", "query"] as const)(
+    "%s preserves options.body when the body argument is omitted",
+    async (method) => {
+      const body = { source: "options" };
+      let receivedBody: unknown;
+      const bodyClient = new HyperClient(
+        { builtInPlugins: false },
+        {
+          async execute(request) {
+            receivedBody = request.body;
+            return {
+              status: 200,
+              headers: { "content-type": "text/plain" },
+              body: new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.close();
+                },
+              }),
+            };
+          },
+        },
+      );
+      const shortcut = bodyClient[method] as (
+        url: string,
+        body?: unknown,
+        options?: { body?: unknown; responseType?: "text" },
+      ) => Promise<string>;
+
+      try {
+        await shortcut.call(bodyClient, "http://example.test/resource", undefined, {
+          body,
+          responseType: "text",
+        });
+        expect(receivedBody).toBe(JSON.stringify(body));
+      } finally {
+        await bodyClient.destroy();
+      }
+    },
+  );
+
+  it.each(["get", "delete"] as const)(
+    "%s accepts an AbortSignal as its second argument",
+    async (method) => {
+      const controller = new AbortController();
+      let receivedSignal: AbortSignal | undefined;
+      const signalClient = new HyperClient(
+        { builtInPlugins: false },
+        successfulTransport((signal) => {
+          receivedSignal = signal;
+        }),
+      );
+      const shortcut = signalClient[method] as (
+        url: string,
+        signal?: AbortSignal,
+      ) => Promise<unknown>;
+
+      try {
+        await shortcut.call(signalClient, "http://example.test/resource", controller.signal);
+        expect(receivedSignal).toBe(controller.signal);
+      } finally {
+        await signalClient.destroy();
+      }
+    },
+  );
+
+  it.each(["post", "put", "patch", "options", "query"] as const)(
+    "%s accepts an AbortSignal as its third argument",
+    async (method) => {
+      const controller = new AbortController();
+      let receivedSignal: AbortSignal | undefined;
+      const signalClient = new HyperClient(
+        { builtInPlugins: false },
+        successfulTransport((signal) => {
+          receivedSignal = signal;
+        }),
+      );
+      const shortcut = signalClient[method] as (
+        url: string,
+        body?: unknown,
+        signal?: AbortSignal,
+      ) => Promise<unknown>;
+
+      try {
+        await shortcut.call(
+          signalClient,
+          "http://example.test/resource",
+          { ok: true },
+          controller.signal,
+        );
+        expect(receivedSignal).toBe(controller.signal);
+      } finally {
+        await signalClient.destroy();
+      }
+    },
+  );
+
+  it("combines shortcut and options abort signals", async () => {
+    const optionController = new AbortController();
+    const argumentController = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    const signalClient = new HyperClient(
+      { builtInPlugins: false },
+      successfulTransport((signal) => {
+        receivedSignal = signal;
+      }),
+    );
+
+    try {
+      await signalClient.get(
+        "http://example.test/resource",
+        { signal: optionController.signal },
+        argumentController.signal,
+      );
+      expect(receivedSignal).not.toBe(optionController.signal);
+      expect(receivedSignal).not.toBe(argumentController.signal);
+      optionController.abort();
+      expect(receivedSignal?.aborted).toBe(true);
+    } finally {
+      await signalClient.destroy();
+    }
+  });
+
   it("performs HEAD request", async () => {
     const res = await client.head(`${BASE}/json`);
     expect(res.status).toBe(200);
@@ -123,9 +274,15 @@ describe("HyperClient", () => {
     }
   });
 
-  it("deep-merges retry config in constructor and extend", async () => {
-    const parent = new HyperClient({ retry: { maxRetries: 7 } });
-    const child = parent.extend({ retry: { baseDelay: 250 } });
+  it("deep-merges nested plugin config in constructor and extend", async () => {
+    const parent = new HyperClient({
+      retry: { maxRetries: 7 },
+      rateLimit: { maxRequests: 10, windowMs: 1_000 },
+    });
+    const child = parent.extend({
+      retry: { baseDelay: 250 },
+      rateLimit: { maxRequests: 20 },
+    });
 
     expect(parent["_config"].retry).toEqual({
       maxRetries: 7,
@@ -139,9 +296,26 @@ describe("HyperClient", () => {
       maxDelay: 5000,
       jitter: true,
     });
+    expect(child["_config"].rateLimit).toEqual({ maxRequests: 20, windowMs: 1_000 });
 
     await child.destroy();
     await parent.destroy();
+  });
+
+  it("allows redefining exposed protocol namespaces", async () => {
+    const protocolClient = new HyperClient({ builtInPlugins: false });
+
+    try {
+      expect(() => {
+        Object.defineProperty(protocolClient, "rest", {
+          configurable: true,
+          value: "overridden",
+        });
+      }).not.toThrow();
+      expect(protocolClient["rest"]).toBe("overridden");
+    } finally {
+      await protocolClient.destroy();
+    }
   });
 
   it("create alias works", async () => {

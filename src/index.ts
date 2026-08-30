@@ -17,3 +17,4 @@ export * from "@hyperttp/metrics";
 export * from "@hyperttp/inflight";
 export * from "@hyperttp/parser";
 export * from "@hyperttp/serializer";
+export * from "@hyperttp/crypto"
