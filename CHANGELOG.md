@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.6] - 2026-10-14
+
+### Changed
+
+- Updated runtime dependencies: `@hyperttp/core` ^2.0.1 → ^2.0.3 and `@hyperttp/types` ^0.3.0 → ^0.4.2.
+- Updated development dependencies: `@types/node` ^26.4.0 → ^26.6.5, `@vitest/coverage-v8` and `vitest` ^4.1.11 → ^5.0.4, `chalk` ^6.0.0 → ^6.0.1, `oxfmt` ^0.65.0 → ^0.73.0, `oxlint` ^1.80.0 → ^1.88.0, and `tsx` ^4.23.13 → ^4.23.15.
+- Added `lock:bun` and updated `dist` to synchronize both Bun and Deno lockfiles before packaging.
+- Refreshed `bun.lock` for the updated dependency tree.
+
 ## [0.5.5] - 2026-08-29
 
 ### Changed

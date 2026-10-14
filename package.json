@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "sideEffects": false,
@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "@hyperttp/cache": "^2.0.1",
-    "@hyperttp/core": "^2.0.1",
+    "@hyperttp/core": "^2.0.3",
     "@hyperttp/crypto": "^1.0.2",
     "@hyperttp/inflight": "^2.0.0",
     "@hyperttp/interceptors": "^2.0.0",
@@ -51,26 +51,27 @@
     "@hyperttp/queue": "^2.0.0",
     "@hyperttp/ratelimit": "^2.0.1",
     "@hyperttp/serializer": "^2.0.0",
-    "@hyperttp/types": "^0.3.0"
+    "@hyperttp/types": "^0.4.2"
   },
   "devDependencies": {
     "@dirold2/dev-tools": "^1.1.3",
-    "@types/node": "^26.4.0",
-    "@vitest/coverage-v8": "^4.1.11",
-    "chalk": "^6.0.0",
+    "@types/node": "^26.6.5",
+    "@vitest/coverage-v8": "^5.0.4",
+    "chalk": "^6.0.1",
     "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.2",
     "jiti": "^2.7.0",
-    "oxfmt": "^0.65.0",
-    "oxlint": "^1.80.0",
-    "tsx": "^4.23.13",
+    "oxfmt": "^0.73.0",
+    "oxlint": "^1.88.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.4"
   },
   "scripts": {
     "build": "tsc && esbuild 'dist/**/*.js' --outdir=dist --allow-overwrite --minify --sourcemap && d-build",
+    "lock:bun": "bun install --lockfile-only",
     "lock:deno": "deno check --node-modules-dir=auto --minimum-dependency-age=0 --lock=deno.lock --frozen=false dist/index.js",
-    "dist": "d-dist",
+    "dist": "npm run lock:bun && npm run lock:deno && d-dist",
     "deploy": "npm run build && npm run dist",
     "pub": "d-publish",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",

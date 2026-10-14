@@ -149,7 +149,8 @@ describe("HyperClient", () => {
           body,
           responseType: "text",
         });
-        expect(receivedBody).toBe(JSON.stringify(body));
+        expect(receivedBody).toBeInstanceOf(Uint8Array);
+        expect(new TextDecoder().decode(receivedBody as Uint8Array)).toBe(JSON.stringify(body));
       } finally {
         await bodyClient.destroy();
       }
