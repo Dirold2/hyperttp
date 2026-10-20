@@ -1,4 +1,6 @@
 import type {
+  AnyHyperProtocol,
+  SenderProtocol,
   HyperPlugin,
   HyperTransport,
   HyperClientOptions,
@@ -18,6 +20,7 @@ import { defaultConfig } from "../defaultConfig.js";
 import { RequestBuilder, type ResponseType } from "../Utils/RequestBuilder.js";
 import type { HttpMethod, RestInput, RestRequestOptions } from "@hyperttp/core/rest";
 import { withCrypto } from "@hyperttp/crypto";
+import { withAuth } from "@hyperttp/auth";
 
 export type ShortcutRequestOptions = RestRequestOptions & {
   responseType?: ResponseType;
@@ -118,7 +121,7 @@ export class HyperClient {
     if (this._config.builtInPlugins !== false) {
       this.useDefaultPlugins();
     }
-    this._engine.registerProtocol(RestProtocol);
+    this.registerProtocol(RestProtocol);
     this.exposeProtocolNamespaces();
   }
 
@@ -126,8 +129,15 @@ export class HyperClient {
    * @ru Подключает стандартный набор плагинов клиента.
    * @en Registers the client's built-in plugin set.
    */
+  private registerProtocol<P extends SenderProtocol>(protocol: AnyHyperProtocol<P>): void {
+    this._engine.registerProtocol(protocol);
+  }
+
   private useDefaultPlugins(): void {
     this.use(withInterceptors(this._config.interceptors));
+    if (this._config.auth) {
+      this.use(withAuth(this._config.auth));
+    }
     this.use(withSerializer(this._config.serializer));
     this.use(withMetrics(this._config.metrics));
     this.use(withInflight(this._config.inflight));
@@ -175,6 +185,36 @@ export class HyperClient {
    */
   public async getTransportName(): Promise<string> {
     return this._engine.getTransportName();
+  }
+
+  /**
+   * @ru Возвращает имя зарегистрированного протокола.
+   * @en Returns the name of a registered protocol.
+   * @param protocol - Идентификатор протокола; по умолчанию `rest`.
+   * @returns Promise resolving to the protocol name.
+   */
+  public async getProtocolName(protocol?: SenderProtocol): Promise<string> {
+    return this._engine.getProtocolName(protocol);
+  }
+
+  /**
+   * @ru Возвращает имя receiver зарегистрированного протокола.
+   * @en Returns the name of a registered protocol receiver.
+   * @param protocol - Идентификатор протокола; по умолчанию `rest`.
+   * @returns Promise resolving to the receiver name.
+   */
+  public async getReceiverName(protocol?: SenderProtocol): Promise<string> {
+    return this._engine.getReceiverName(protocol);
+  }
+
+  /**
+   * @ru Возвращает имя sender зарегистрированного протокола.
+   * @en Returns the name of a registered protocol sender.
+   * @param protocol - Идентификатор протокола; по умолчанию `rest`.
+   * @returns Promise resolving to the sender name.
+   */
+  public async getSenderName(protocol?: SenderProtocol): Promise<string> {
+    return this._engine.getSenderName(protocol);
   }
 
   private resolveUrl(url: string): string {

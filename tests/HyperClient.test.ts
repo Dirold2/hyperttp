@@ -87,6 +87,38 @@ describe("HyperClient", () => {
     expect(res).toContain("hello-body");
   });
 
+  it("applies configured auth credentials", async () => {
+    let authorization: string | string[] | undefined;
+    const authClient = new HyperClient(
+      {
+        auth: {
+          rest: { type: "bearer", getToken: () => "access-token" },
+        },
+      },
+      {
+        async execute(request) {
+          authorization = request.headers.authorization;
+          return {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+            body: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.close();
+              },
+            }),
+          };
+        },
+      },
+    );
+
+    try {
+      await authClient.get("http://example.test/resource");
+      expect(authorization).toBe("Bearer access-token");
+    } finally {
+      await authClient.destroy();
+    }
+  });
+
   it("adds a SHA-256 Digest header for requests with a body", async () => {
     let digest: string | string[] | undefined;
     const cryptoClient = new HyperClient(

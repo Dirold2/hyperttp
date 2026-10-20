@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0] - 2026-10-20
+
+### Added
+
+- Added built-in authentication support through `@hyperttp/auth`. Configure `HyperClient` with `auth` to attach dynamic Bearer, Basic, or API-key credentials to outgoing requests.
+- Added `getProtocolName()`, `getReceiverName()`, and `getSenderName()` for protocol introspection; each accepts an optional protocol identifier and defaults to `rest`.
+
+### Changed
+
+- Registered configured authentication before cache and inflight plugins so non-secret auth identities can partition cache and request-deduplication keys.
+- Updated runtime dependencies: `@hyperttp/auth` ^1.0.0, `@hyperttp/cache` ^2.0.1 → ^2.0.3, `@hyperttp/core` ^2.0.3 → ^2.0.4, and `@hyperttp/inflight` ^2.0.0 → ^2.0.2.
+- Updated development dependencies: `@vitest/coverage-v8` and `vitest` ^5.0.4 → ^5.0.5, `oxfmt` ^0.73.0 → ^0.74.0, and `oxlint` ^1.88.0 → ^1.89.0.
+
+### Fixed
+
+- Resolved protocol registration typing against `@hyperttp/core` 2.0.4 without weakening the protocol type contract.
+
 ## [0.5.6] - 2026-10-14
 
 ### Changed
