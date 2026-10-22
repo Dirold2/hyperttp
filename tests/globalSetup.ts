@@ -2,12 +2,6 @@ import type { AddressInfo } from "node:net";
 import type { TestProject } from "vitest/node";
 import { createBenchmarkServer } from "./benchmarkServer.js";
 
-declare module "vitest" {
-  export interface ProvidedContext {
-    benchmarkBaseUrl: string;
-  }
-}
-
 export default async function globalSetup(project: TestProject) {
   const server = createBenchmarkServer();
 

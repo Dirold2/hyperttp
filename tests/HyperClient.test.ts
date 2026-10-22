@@ -87,6 +87,43 @@ describe("HyperClient", () => {
     expect(res).toContain("hello-body");
   });
 
+  it("delegates server listening to Core", async () => {
+    let receivedOptions: { host?: string; port?: number; onRequest?: unknown } | undefined;
+    let closed = false;
+    const listenClient = new HyperClient(
+      { builtInPlugins: false },
+      {
+        async execute() {
+          throw new Error("Not used by listen()");
+        },
+        async listen(options) {
+          receivedOptions = options;
+          return {
+            close() {
+              closed = true;
+            },
+          };
+        },
+      },
+    );
+
+    try {
+      const server = await listenClient.listen({
+        host: "127.0.0.1",
+        port: 0,
+        handler: () => ({ body: "ok" }),
+      });
+
+      expect(receivedOptions?.host).toBe("127.0.0.1");
+      expect(receivedOptions?.port).toBe(0);
+      expect(receivedOptions?.onRequest).toBeTypeOf("function");
+      await server.close();
+      expect(closed).toBe(true);
+    } finally {
+      await listenClient.destroy();
+    }
+  });
+
   it("applies configured auth credentials", async () => {
     let authorization: string | string[] | undefined;
     const authClient = new HyperClient(

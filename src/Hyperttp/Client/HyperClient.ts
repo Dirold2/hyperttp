@@ -6,6 +6,8 @@ import type {
   HyperClientOptions,
   HyperProtocols,
   UniversalResponse,
+  HyperServerListenOptions,
+  TransportServer,
 } from "@hyperttp/types";
 import { deepMerge, HyperCore, KNOWN_PROTOCOLS, RestProtocol } from "@hyperttp/core";
 import { withCache } from "@hyperttp/cache";
@@ -253,6 +255,36 @@ export class HyperClient {
     };
     const response = await this._engine.send<RestInput, T, "rest">(request);
     return response.data;
+  }
+
+  /**
+   * @ru Запускает REST-сервер.
+   * @en Starts a REST server.
+   * @param options - Параметры прослушивания и необязательный REST-обработчик.
+   * @returns Promise resolving to the running server handle.
+   */
+  public listen(
+    options: Omit<HyperServerListenOptions<"rest">, "protocol">,
+  ): Promise<TransportServer>;
+
+  /**
+   * @ru Запускает сервер для указанного протокола.
+   * @en Starts a server for the specified protocol.
+   * @param options - Параметры прослушивания и необязательный обработчик протокола.
+   * @returns Promise resolving to the running server handle.
+   */
+  public listen<P extends SenderProtocol>(
+    options: HyperServerListenOptions<P>,
+  ): Promise<TransportServer>;
+
+  public listen<P extends SenderProtocol>(
+    options: Omit<HyperServerListenOptions<"rest">, "protocol"> | HyperServerListenOptions<P>,
+  ): Promise<TransportServer> {
+    if ("protocol" in options) {
+      return this._engine.listen(options);
+    }
+
+    return this._engine.listen({ ...options, protocol: "rest" });
   }
 
   private executeShortcut<T>(

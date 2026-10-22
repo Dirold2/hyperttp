@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.1] - 2026-10-22
+
+### Added
+
+- Added `HyperClient.listen()` to start a protocol server through the Core server lifecycle with typed protocol-specific listen options and handler. Calling it without `protocol` starts a REST server.
+
 ## [0.6.0] - 2026-10-20
 
 ### Added
