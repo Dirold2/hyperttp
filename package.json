@@ -7,17 +7,14 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./index.d.ts",
+      "import": "./index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
   "keywords": [
     "http",
     "client",
@@ -54,33 +51,5 @@
     "@hyperttp/types": "^0.4.2",
     "@hyperttp/auth": "^1.0.0"
   },
-  "devDependencies": {
-    "@dirold2/dev-tools": "^1.1.3",
-    "@types/node": "^26.6.5",
-    "@vitest/coverage-v8": "^5.0.5",
-    "chalk": "^6.0.1",
-    "dotenv-cli": "^11.0.0",
-    "esbuild": "^0.28.2",
-    "jiti": "^2.7.0",
-    "oxfmt": "^0.74.0",
-    "oxlint": "^1.89.0",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
-    "vitest": "^5.0.5"
-  },
-  "scripts": {
-    "build": "tsc && esbuild 'dist/**/*.js' --outdir=dist --allow-overwrite --minify --sourcemap && d-build",
-    "lock:bun": "bun install --lockfile-only",
-    "lock:deno": "deno check --node-modules-dir=auto --minimum-dependency-age=0 --lock=deno.lock --frozen=false dist/index.js",
-    "dist": "npm run lock:bun && npm run lock:deno && d-dist",
-    "deploy": "npm run build && npm run dist",
-    "pub": "d-publish",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "lint": "oxlint src tests vitest.config.ts",
-    "lint:fix": "oxlint src tests vitest.config.ts --fix",
-    "format": "oxfmt src tests vitest.config.ts",
-    "format:check": "oxfmt src tests vitest.config.ts --check",
-    "test": "vitest run",
-    "dev": "tsx src/index.ts"
-  }
+  "private": false
 }
