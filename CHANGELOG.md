@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.2] - 2026-10-26
+
+### Added
+
+- Exposed namespaces for protocols configured through `protocols`, `senders`, `receivers`, or `customSender`, such as `client.webrtc` for a configured WebRTC protocol.
+
+### Changed
+
+- Updated `@hyperttp/core` ^2.0.4 → ^2.0.5.
+
+### Fixed
+
+- Reject configured protocol namespaces that conflict with the public `HyperClient` API instead of allowing them to overwrite client methods.
+
 ## [0.6.1] - 2026-10-22
 
 ### Added

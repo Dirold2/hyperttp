@@ -1,7 +1,42 @@
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { HyperClient, RequestBuilder, type HyperTransport } from "../src/index.js";
+import type { HyperProtocol } from "@hyperttp/types";
 
 const BASE = inject("benchmarkBaseUrl");
+
+const webRtcProtocol: HyperProtocol<
+  { peerUrl: string },
+  { peerUrl: string },
+  unknown,
+  unknown,
+  "webrtc"
+> = {
+  protocol: "webrtc",
+  sender: {
+    protocol: "webrtc",
+    methods: {
+      connect: (
+        core: {
+          send(request: { protocol: "webrtc"; input: { peerUrl: string } }): Promise<unknown>;
+        },
+        peerUrl: string,
+      ) => core.send({ protocol: "webrtc", input: { peerUrl } }),
+    },
+    prepare: (request) => request.input,
+    async send(prepared) {
+      return prepared;
+    },
+    parse(raw) {
+      return {
+        protocol: "webrtc",
+        ok: true,
+        status: 200,
+        headers: {},
+        data: raw as { peerUrl: string },
+      };
+    },
+  },
+};
 
 function successfulTransport(onExecute?: (signal?: AbortSignal) => void): HyperTransport {
   return {
@@ -48,6 +83,35 @@ describe("HyperClient", () => {
     const res = await client.rest.get<{ ok: boolean }>(`${BASE}/json`);
     expect(res.status).toBe(200);
     expect(res.data.ok).toBe(true);
+  });
+
+  it("exposes namespaces for configured protocols", async () => {
+    const protocolClient = new HyperClient(
+      { builtInPlugins: false, protocols: [webRtcProtocol] },
+      successfulTransport(),
+    );
+
+    try {
+      const webRtc = (protocolClient as HyperClient & Record<string, unknown>).webrtc as {
+        connect(peerUrl: string): Promise<{ data: { peerUrl: string } }>;
+      };
+      const request = webRtc.connect("webrtc://peer.example");
+      const response = await request;
+
+      expect(response.data).toEqual({ peerUrl: "webrtc://peer.example" });
+    } finally {
+      await protocolClient.destroy();
+    }
+  });
+
+  it("rejects configured protocol namespaces that conflict with the client API", () => {
+    expect(
+      () =>
+        new HyperClient({
+          builtInPlugins: false,
+          protocols: [{ ...webRtcProtocol, protocol: "get" }],
+        }),
+    ).toThrow('Protocol namespace "get" conflicts with the HyperClient API.');
   });
 
   it("performs GET and returns text", async () => {

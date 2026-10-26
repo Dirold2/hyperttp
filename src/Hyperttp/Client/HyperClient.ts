@@ -153,6 +153,31 @@ export class HyperClient {
   }
 
   /**
+   * @ru Возвращает имена встроенных и сконфигурированных протоколов, чьи
+   * пространства имён должны быть доступны на клиенте.
+   * @en Returns names of built-in and configured protocols whose namespaces
+   * should be exposed on the client.
+   */
+  private getProtocolNamespaceNames(): Set<SenderProtocol> {
+    const names = new Set<SenderProtocol>(KNOWN_PROTOCOLS);
+
+    for (const protocol of this._config.protocols ?? []) {
+      names.add(protocol.protocol);
+    }
+    for (const sender of this._config.senders ?? []) {
+      names.add(sender.protocol);
+    }
+    for (const receiver of this._config.receivers ?? []) {
+      names.add(receiver.protocol);
+    }
+    if (this._config.customSender) {
+      names.add(this._config.customSender.protocol);
+    }
+
+    return names;
+  }
+
+  /**
    * @ru Делегирует пространства имён протоколов ядра клиенту.
    * Внешние пакеты расширяют HyperProtocols через module augmentation, поэтому
    * после установки @hyperttp/protocol-grpc доступен client.grpc.call(...).
@@ -160,7 +185,11 @@ export class HyperClient {
    * packages augment HyperProtocols, making client.grpc.call(...) available.
    */
   private exposeProtocolNamespaces(): void {
-    for (const protocol of KNOWN_PROTOCOLS) {
+    for (const protocol of this.getProtocolNamespaceNames()) {
+      if (protocol in this) {
+        throw new TypeError(`Protocol namespace "${protocol}" conflicts with the HyperClient API.`);
+      }
+
       Object.defineProperty(this, protocol, {
         configurable: true,
         enumerable: true,
