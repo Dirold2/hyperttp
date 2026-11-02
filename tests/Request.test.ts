@@ -2,6 +2,25 @@ import { describe, it, expect } from "vitest";
 import Request, { PreparedRequest } from "../src/Hyperttp/Request.js";
 
 describe("Request", () => {
+  it("omits nullish array entries from both query representations", () => {
+    const req = new Request({
+      scheme: "https",
+      host: "example.com",
+      query: { tag: ["a", null, undefined, "b"], zero: [0, false, ""] },
+    });
+    for (const params of [
+      new URL(req.url).searchParams,
+      new URLSearchParams(req.getQueryAsString()),
+    ]) {
+      expect(params.getAll("tag")).toEqual(["a", "b"]);
+      expect(params.getAll("zero")).toEqual(["0", "false", ""]);
+    }
+  });
+
+  it("normalizes only the host prefix join boundary", () => {
+    const req = new Request({ scheme: "https", host: "example.com/prefix//v1/", path: "/a//b" });
+    expect(new URL(req.url).pathname).toBe("/prefix//v1/a//b");
+  });
   it("builds URL from components", () => {
     const req = new Request({
       scheme: "https",
@@ -187,6 +206,19 @@ describe("Request", () => {
 });
 
 describe("PreparedRequest", () => {
+  it("preserves query names inherited by ordinary objects", () => {
+    const req = new PreparedRequest(
+      "https://example.com/?constructor=a&constructor=b&toString=c&__proto__=d&__proto__=e",
+    );
+    const params = new URL(req.url).searchParams;
+    expect(params.getAll("constructor")).toEqual(["a", "b"]);
+    expect(params.getAll("toString")).toEqual(["c"]);
+    expect(params.getAll("__proto__")).toEqual(["d", "e"]);
+  });
+
+  it.each(["/a//b", "//a///b", "/a//"])("preserves repeated path slashes: %s", (path) => {
+    expect(new URL(new PreparedRequest(`https://example.com${path}`).url).pathname).toBe(path);
+  });
   it("parses full URL", () => {
     const req = new PreparedRequest("https://api.example.com:8080/v2/users?active=true");
     const url = new URL(req.url);

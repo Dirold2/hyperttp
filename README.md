@@ -1,6 +1,6 @@
 # Hyperttp
 
-**An Axios-like HTTP client with built-in request policies for modern TypeScript applications.**
+**A typed client/server facade over HyperCore with composable request policies and REST routing.**
 
 > English | [Русский](https://github.com/dirold2/hyperttp/tree/main/lang/ru)
 
@@ -52,7 +52,8 @@ specialized. See [Choosing a client](#choosing-a-client) for an objective compar
 
 ## Installation
 
-Node.js usage requires Node.js 22.19.0 or newer because Hyperttp uses Undici 8.
+Node.js usage requires Node.js 22.19.0 or newer. Hyperttp uses Core 3, plugin 3.x releases
+and `@hyperttp/types@^0.5.0`. Optimized transports are optional, not bundled.
 
 ```bash
 npm install hyperttp
@@ -327,9 +328,29 @@ const client = new HyperClient({
 The REST protocol and plugins explicitly supplied through `plugins` or `client.use()` remain
 available.
 
-> Retry options exist in the current type surface, but retry execution is not documented as a
-> stable feature in `0.5.x`. It is therefore not counted as an active capability in the comparison
-> below.
+### Retry, authentication and final settlement
+
+Retries are enabled by the default preset. The external retry wrapper retries eligible idempotent
+REST requests on selected transient failures/statuses; each attempt runs the full plugin pipeline.
+Streams are not replayed automatically. Disable retries with `retry: { enabled: false }`.
+
+```ts
+const client = new HyperClient({
+  retry: { maxRetries: 2, baseDelay: 100, maxDelay: 5_000, jitter: true },
+});
+```
+
+Auth must explicitly allow trusted origins. Authenticated caching/deduplication requires safe,
+non-secret identity/key configuration; do not put credentials into cache keys or metric labels.
+Default metrics strip URL query, fragment and userinfo, not secrets embedded in path segments.
+
+Core's stable request context and final settlement coordinate queue release, cache storage,
+inflight followers and metrics after blocking response/recovery processing. Background hooks
+and stream completion are outside that settlement boundary.
+
+Stateful custom plugins belong to one Core. Prefer `pluginFactories: [() => makePlugin()]`
+when deriving clients; do not reuse stateful instances across independent clients. Repeating
+`use()` with the same instance is idempotent; conflicting plugin names are rejected.
 
 ## Streaming
 
@@ -393,7 +414,14 @@ try {
 }
 ```
 
-Pass `true` for graceful shutdown or `false` when resources must be destroyed immediately.
+Pass `true` for graceful shutdown. `false` delegates forced interruption to the transport;
+non-cooperative operations are not guaranteed to cancel immediately. New sends/listens are
+rejected after shutdown starts. Client destruction also closes its tracked servers.
+
+`extend()` and `create()` currently construct new high-level clients with merged configuration;
+`create()` is an alias of `extend()`, not Core's isolated-create contract. Explicitly supplied
+transports may remain shared. Built-in plugins are recreated; inherited custom stateful plugins
+must be replaced or supplied through factories.
 
 ## Coming from Axios?
 
@@ -423,7 +451,7 @@ natural fit based on its documented built-in features.
 | Primary runtimes           | Runtime native  | Browser, Node             | Browser, Node, Bun, Deno | Node, browser, workers     | Node                             | Node plus Fetch-based runtimes |
 | Parsed-data shortcut       | No              | Via `response.data`       | Via `.json()`            | Yes                        | JSON mode                        | Yes                            |
 | Full response access       | Yes             | Yes                       | Yes                      | Yes (`.raw`)               | Yes                              | Yes (`client.rest`)            |
-| Automatic retries          | No              | No built-in               | Yes                      | Yes                        | Yes                              | Not currently stable           |
+| Automatic retries          | No              | No built-in               | Yes                      | Yes                        | Yes                              | Yes, external retry plugin     |
 | Application response cache | No              | No built-in               | No built-in              | No built-in                | Yes                              | Yes                            |
 | In-flight deduplication    | No              | No built-in               | No built-in              | No built-in                | No built-in                      | Yes                            |
 | Built-in rate limiting     | No              | No                        | No                       | No                         | No                               | Yes                            |
@@ -476,15 +504,38 @@ Ky, Axios, ofetch, and Got are comparison references only. They are not Hyperttp
 
 ## Runtime transports
 
-- Node.js resolves the included `@hyperttp/transport-undici` transport.
-- Other runtimes can use the Fetch fallback when `globalThis.fetch` is available.
-- Optional Bun- and Deno-specific transport packages may be installed separately.
-- A custom transport can be passed to the constructor or through `customTransport`.
+- Node/Bun/Deno try the corresponding optional `@hyperttp/transport-*` package.
+- Without a compatible optional transport, REST uses the built-in Fetch transport.
+- WebRTC, WebSocket and MQTT require compatible protocol and transport implementations;
+  REST/Fetch is not their physical delivery mechanism.
+- Supply a custom transport as the second constructor argument or through `customTransport`.
 
-Use `await client.getTransportName()` to inspect the selected transport.
+Use `await client.getTransportName()` to inspect selection. `baseURL` resolution belongs to
+high-level shortcuts and `RequestBuilder`; `client.rest.*` delegates directly to Core, so use
+absolute URLs there unless the transport explicitly supports relative URLs.
 
-Runtime code paths target Node.js, Bun, Deno, and browsers. The repository test suite currently
-verifies the Node.js path; validate the other runtimes in your own deployment environment.
+Built-package mock smoke tests pass on Node, Bun, Deno and Chromium without Node polyfills.
+They do not certify every optional transport or real network deployment. Browser checks cover
+client requests and facade configuration, not opening a listening socket in a browser.
+The REST fallback server depends on `node:http` support.
+
+## Development and runtime checks
+
+```sh
+bun install --frozen-lockfile
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run smoke:node
+npm run smoke:bun
+npm run smoke:deno
+npm run smoke:browser
+```
+
+Browser smoke requires Chromium (`CHROMIUM_PATH` can override its executable). The browser
+page blocks network access; smoke requests use mock transports. Build first: smoke checks `dist`.
 
 ## Ecosystem
 
@@ -500,7 +551,45 @@ Hyperttp is composed from focused packages:
 - `@hyperttp/ratelimit`
 - `@hyperttp/queue`
 - `@hyperttp/parser`
-- `@hyperttp/transport-undici`
+- `@hyperttp/auth`
+- `@hyperttp/crypto`
+- `@hyperttp/retry`
+- optional `@hyperttp/transport-*` packages
+
+## REST server facade
+
+REST routing and typed services live in the high-level `hyperttp` package, not in `@hyperttp/core`:
+
+```ts
+import { HyperClient } from "hyperttp";
+
+const client = new HyperClient();
+const server = client.server(3000, {
+  host: "127.0.0.1",
+  services: { users: { find: async (id: string) => ({ id }) } },
+});
+
+server.use(async (_request, next) => {
+  const response = await next();
+  return { ...response, headers: { ...response.headers, "x-app": "example" } };
+});
+
+server.rest.get("/users/:id", async ({ params, services }) => ({
+  body: await services.users.find(params.id),
+}));
+
+await server.start();
+// await server.close(); // or await client.destroy()
+```
+
+For an existing Core, use `createServer(core, { port: 3000, services })` from `hyperttp`.
+Construction never binds a port. Register routes and middleware before `start()`; registration is frozen after start/close. Concurrent starts share one startup, and close waits for pending startup. A closed or failed facade cannot restart; create another facade instead.
+
+Handlers receive decoded path `params`, inferred `services`, the REST request fields and the stable server `context`. Query values remain `string | string[]`, and body remains `unknown` until application validation. Services are application-owned: the facade never creates or disposes them.
+
+Routing is case-sensitive with exact trailing slashes; literal segments take precedence over parameters independent of registration order. Equal method/pattern registrations (including renamed parameters) are rejected. Unknown paths return 404; a known path with an unregistered method returns 405 with `Allow`. HEAD/OPTIONS must be registered explicitly; no implicit GET fallback or CORS policy is added. Middleware wraps the handler/404/405 response, can short-circuit, and may call `next()` once. Malformed matched path parameters return 400 before route middleware.
+
+Core `onServerRequest`, `onServerResponse`, `onServerError` and `onServerSettled` hooks still wrap this facade. Client auth/cache hooks are not inbound authorization: use server middleware or dedicated server hooks. This first facade is REST-only; no WebRTC server operations are inferred from client methods.
 
 ## License
 

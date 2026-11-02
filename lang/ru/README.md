@@ -53,7 +53,8 @@ Hyperttp не лучше любого клиента во всех сценар�
 
 ## Установка
 
-Для запуска в Node.js требуется Node.js 22.19.0 или новее, поскольку Hyperttp использует Undici 8.
+Требуется Node.js 22.19.0 или новее. Hyperttp использует Core 3, плагины 3.x и
+`@hyperttp/types@^0.5.0`. Оптимизированные транспорты опциональны и не входят в пакет.
 
 ```bash
 npm install hyperttp
@@ -327,9 +328,29 @@ const client = new HyperClient({
 
 REST-протокол и плагины, явно переданные через `plugins` или `client.use()`, останутся доступны.
 
-> Retry options присутствуют в текущих типах, но выполнение повторов пока не документируется как
-> стабильная возможность ветки `0.5.x`. Поэтому retries не считаются активной возможностью в
-> сравнении ниже.
+### Retry, auth и окончательное завершение запроса
+
+Стандартный preset включает внешний retry wrapper: допустимые идемпотентные REST-запросы
+повторяются при выбранных transient errors/statuses. Каждая попытка запускает весь pipeline.
+Streams автоматически не переигрываются. Для отключения: `retry: { enabled: false }`.
+
+```ts
+const client = new HyperClient({
+  retry: { maxRetries: 2, baseDelay: 100, maxDelay: 5_000, jitter: true },
+});
+```
+
+Auth требует явного `auth.allowedOrigins`. Для authenticated cache/inflight нужны безопасные
+non-secret identity и keys. Не помещайте credentials в cache keys или metric labels.
+Стандартные metrics исключают query, fragment и userinfo URL, но не секреты внутри path.
+
+Стабильный RequestContext и final settlement согласуют освобождение queue, запись cache,
+завершение inflight followers и metrics после blocking response/recovery hooks.
+Background hooks и окончание чтения stream не входят в эту границу.
+
+Stateful custom plugin принадлежит одному Core. Для производных клиентов используйте
+`pluginFactories: [() => makePlugin()]`, а не общий экземпляр. Повторная регистрация одного
+экземпляра идемпотентна; конфликтующие имена плагинов отклоняются.
 
 ## Потоковые ответы
 
@@ -394,7 +415,14 @@ try {
 }
 ```
 
-Передайте `true` для graceful shutdown или `false` для немедленного освобождения ресурсов.
+`true` ожидает graceful shutdown. `false` делегирует принудительную отмену транспорту;
+некооперативные операции не гарантированно прерываются сразу. После начала shutdown новые
+send/listen отклоняются; уничтожение клиента также закрывает отслеживаемые серверы.
+
+`extend()` и `create()` создают новые high-level clients с объединённой конфигурацией;
+`create()` пока является alias `extend()`, а не изолированным Core.create(). Явный transport
+может оставаться общим. Built-in plugins создаются заново; custom stateful plugins нужно
+заменять или передавать через factories.
 
 ## Переход с Axios
 
@@ -424,7 +452,7 @@ try {
 | Основные runtime             | Встроен в runtime | Browser, Node             | Browser, Node, Bun, Deno | Node, browser, workers     | Node                        | Node и Fetch-based runtime |
 | Shortcut с готовыми данными  | Нет               | Через `response.data`     | Через `.json()`          | Да                         | JSON mode                   | Да                         |
 | Полный response              | Да                | Да                        | Да                       | Да (`.raw`)                | Да                          | Да (`client.rest`)         |
-| Автоматические retries       | Нет               | Нет встроенных            | Да                       | Да                         | Да                          | Пока не stable             |
+| Автоматические retries       | Нет               | Нет встроенных            | Да                       | Да                         | Да                          | Да, внешний retry plugin   |
 | Application response cache   | Нет               | Нет встроенного           | Нет встроенного          | Нет встроенного            | Да                          | Да                         |
 | In-flight deduplication      | Нет               | Нет встроенной            | Нет встроенной           | Нет встроенной             | Нет встроенной              | Да                         |
 | Встроенный rate limiting     | Нет               | Нет                       | Нет                      | Нет                        | Нет                         | Да                         |
@@ -477,15 +505,38 @@ Ky, Axios, ofetch и Got используются только для сравн
 
 ## Транспорты выполнения
 
-- В Node.js автоматически выбирается включённый `@hyperttp/transport-undici`.
-- Другие runtime могут использовать Fetch fallback при наличии `globalThis.fetch`.
-- Опциональные Bun- и Deno-specific transport packages можно установить отдельно.
-- Custom transport можно передать вторым аргументом конструктора или через `customTransport`.
+- Node/Bun/Deno проверяют соответствующий опциональный пакет `@hyperttp/transport-*`.
+- Без совместимого optional transport REST использует встроенный Fetch fallback.
+- WebRTC, WebSocket и MQTT требуют совместимых protocol/transport implementations:
+  REST/Fetch не является механизмом их физической доставки.
+- Custom transport передаётся вторым аргументом конструктора или через `customTransport`.
 
-Узнать выбранный транспорт можно через `await client.getTransportName()`.
+Выбранный транспорт: `await client.getTransportName()`. `baseURL` применяется в high-level
+shortcuts и RequestBuilder. Namespace `client.rest.*` делегирует напрямую Core: используйте
+абсолютные URL, если transport явно не поддерживает относительные.
 
-Код содержит пути выполнения для Node.js, Bun, Deno и browser. Текущий test suite проверяет Node.js;
-остальные runtime следует отдельно проверять в целевом окружении.
+Smoke собранного пакета проходит на Node, Bun, Deno и Chromium без Node polyfills.
+Это не сертификация всех optional transports и реальных сетевых конфигураций. В браузере
+проверяются client requests и настройка facade, а не открытие listening socket.
+Встроенный REST server fallback требует поддержки `node:http`.
+
+## Разработка и runtime-проверки
+
+```sh
+bun install --frozen-lockfile
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run smoke:node
+npm run smoke:bun
+npm run smoke:deno
+npm run smoke:browser
+```
+
+Сначала соберите `dist`. Browser smoke требует Chromium; путь можно передать через
+`CHROMIUM_PATH`. Запросы используют mock transports, сеть страницы заблокирована.
 
 ## Экосистема
 
@@ -501,7 +552,53 @@ Hyperttp состоит из сфокусированных пакетов:
 - `@hyperttp/ratelimit`
 - `@hyperttp/queue`
 - `@hyperttp/parser`
-- `@hyperttp/transport-undici`
+- `@hyperttp/auth`
+- `@hyperttp/crypto`
+- `@hyperttp/retry`
+- опциональные `@hyperttp/transport-*`
+
+## REST server facade
+
+```ts
+import { HyperClient } from "hyperttp";
+
+const client = new HyperClient();
+const server = client.server(3000, {
+  host: "127.0.0.1",
+  services: { users: { find: async (id: string) => ({ id }) } },
+});
+
+server.use(async (_request, next) => {
+  const response = await next();
+  return { ...response, headers: { ...response.headers, "x-app": "example" } };
+});
+
+server.rest.get("/users/:id", async ({ params, services }) => ({
+  body: await services.users.find(params.id),
+}));
+
+await server.start();
+// await server.close(); // либо await client.destroy()
+```
+
+Для существующего Core: `createServer(core, { port: 3000, services })` из `hyperttp`.
+Конструктор не открывает порт; routes/middleware регистрируются до `start()`.
+Параллельные start разделяют startup; close ждёт pending startup. Закрытый или неудачно
+запущенный facade нельзя перезапустить — создайте новый.
+
+`params` выводятся из пути и декодируются, `services` типизированы по переданному объекту.
+Query остаётся `string | string[]`, body — `unknown` до прикладной валидации. Сервисы
+принадлежат приложению: facade их не создаёт и не уничтожает.
+
+Matching чувствителен к регистру и trailing slash; static segments приоритетнее params.
+Дубли method/pattern запрещены. Неизвестный path возвращает 404, неподдерживаемый method —
+405 с Allow. HEAD/OPTIONS регистрируются явно; автоматического CORS нет. Middleware
+оборачивает handler/404/405 и может вернуть ранний ответ; next вызывается один раз.
+Ошибочная percent-encoding в matched params возвращает 400 до route middleware.
+
+Core server hooks оборачивают facade; клиентский auth/cache не является входящей защитой.
+Используйте middleware или серверные hooks. Facade пока REST-only: server API WebRTC
+не выводится из клиентских методов автоматически.
 
 ## Лицензия
 

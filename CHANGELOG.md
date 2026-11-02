@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.7.0] - 2026-11-03
+
+### Added
+
+- Added `client.server(port, options)` and `createServer(core, options)` with REST routing, inferred path parameters, typed application-owned services, wrapping middleware, 404/405 responses and explicit `start()` / `close()` lifecycle. Core remains responsible for listener and transport ownership.
+- Automatically registered external retry support: eligible idempotent REST requests can retry transient failures and selected HTTP responses, with `Retry-After` and cancellation during backoff. Each attempt runs the Core plugin pipeline again.
+
+### Changed
+
+- Updated Core to `^3.0.2` and shared contracts to `@hyperttp/types@^0.5.0`.
+- Updated auth, cache, crypto, interceptors, metrics, ratelimit, retry and serializer to `^3.0.0`; inflight and queue to `^3.0.1`; parser to `^3.0.2`. All plugins now resolve from npm without local file/link dependencies.
+- Use canonical `HyperProtocolName` instead of deprecated `SenderProtocol` in the high-level client.
+- Register retry through `createRetryPlugin()` for independent per-Core ownership, including derived clients.
+- Cache and metrics observe final settlement; queue/inflight cleanup and followers use the final logical request outcome with compatible Core/plugins.
+- Authenticated requests use conservative cache/inflight defaults, requiring a non-secret identity and explicit credential-free keys to opt in.
+- Default metrics URL labels and operation keys omit query strings, fragments and URL userinfo.
+- Clean `dist` before building so deleted sources cannot leave stale publication artifacts.
+- Updated development dependencies and refreshed `bun.lock`.
+
+### Fixed
+
+- Preserve configured REST protocols, senders, receivers and `customSender` instead of replacing them during construction.
+- Preserve plain-object custom transport identity during constructor/extend merging, enabling shared ownership and exactly-once closure.
+- Generate valid public declarations for `server.rest.*` chaining by returning `HyperServer<Services>` rather than a nested polymorphic `this` type.
+- Preserve repeated query parameters named `constructor`, `toString` and `__proto__` in prepared requests.
+- Preserve repeated slashes inside paths; normalize only the host-prefix/path join.
+- Skip null/undefined array query entries consistently while preserving `0`, `false` and empty strings.
+
+### Testing
+
+- Added coverage for retry policy/opt-out, protocol overrides, auth origin boundaries, credential-free cache keys and concurrent identity isolation.
+- Added server routing/lifecycle tests, per-client plugin factory tests and transport ownership regressions.
+- Verified installed tarball runtime behavior and strict TypeScript consumer declarations without `skipLibCheck`.
+
+### Migration
+
+- Eligible requests may execute more than once. Set `retry.enabled: false` for single-attempt behavior; `builtInPlugins: false` skips automatic plugins.
+- Core 3 rejects implicit cross-Core stateful plugin reuse. Prefer `pluginFactories`; when deriving clients with explicit stateful `plugins`, provide fresh instances or replace the inherited list with `plugins: []`.
+- Request digests use RFC 9530 `Content-Digest`, not `Digest`. Update server checks and HMAC `includeHeaders` accordingly.
+- Built-in auth requires a non-empty `auth.allowedOrigins` allow-list. Use a stable, non-secret identity and explicit safe cache/inflight keys to enable authenticated reuse.
+- Client auth/cache/retry do not automatically protect incoming server requests. Use server middleware or explicit server plugin hooks.
+- Custom cache keys and metrics extractors remain application-controlled; secrets in URL paths are not automatically redacted.
+
 ## [0.6.2] - 2026-10-26
 
 ### Added
@@ -220,3 +263,7 @@ All notable changes to this project will be documented in this file.
 ## [0.4.9] - 2026-06-??
 
 - Various stability improvements and dependency updates
+
+## Unreleased — server facade
+
+- Added HyperClient.server(port, options), REST routes, typed path parameters/services, middleware and explicit start/close lifecycle. Server lifecycle hooks remain owned by @hyperttp/core.

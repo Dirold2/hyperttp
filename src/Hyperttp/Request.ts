@@ -111,13 +111,16 @@ export default class Request {
     const url = new URL(`${this.scheme}://${targetHost}`);
     url.port = this.port.toString();
 
-    const finalPath = prefixPath + (this.path.startsWith("/") ? this.path : `/${this.path}`);
-    url.pathname = finalPath.replace(/\/+/g, "/");
+    const path = this.path.startsWith("/") ? this.path : `/${this.path}`;
+    // Remove only the join separator; repeated slashes inside either path are meaningful.
+    url.pathname = prefixPath.endsWith("/") ? prefixPath.slice(0, -1) + path : prefixPath + path;
 
     for (const [key, value] of Object.entries(this.query)) {
       if (value == null) continue;
       if (Array.isArray(value)) {
-        value.forEach((v) => url.searchParams.append(key, String(v)));
+        value.forEach((v) => {
+          if (v != null) url.searchParams.append(key, String(v));
+        });
       } else {
         url.searchParams.set(key, String(value));
       }
@@ -236,7 +239,9 @@ export default class Request {
     for (const [key, value] of Object.entries(this.query)) {
       if (value === undefined || value === null) continue;
       if (Array.isArray(value)) {
-        value.forEach((item) => params.append(key, String(item)));
+        value.forEach((item) => {
+          if (item != null) params.append(key, String(item));
+        });
       } else {
         params.set(key, String(value));
       }
@@ -439,7 +444,7 @@ export class PreparedRequest extends Request {
   constructor(baseUrl: string) {
     const url = new URL(baseUrl);
 
-    const query: RequestQuery = {};
+    const query: RequestQuery = Object.create(null);
     for (const [key, value] of url.searchParams) {
       const existing = query[key];
       if (existing == null) {

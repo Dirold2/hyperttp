@@ -1,6 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { HyperClient, RequestBuilder, type HyperTransport } from "../src/index.js";
-import type { HyperProtocol } from "@hyperttp/types";
+import { RestProtocol, RestSender, RestReceiver } from "@hyperttp/core";
+import type { HyperClientOptions, HyperProtocol } from "@hyperttp/types";
 
 const BASE = inject("benchmarkBaseUrl");
 
@@ -66,6 +68,76 @@ describe("HyperClient", () => {
   afterAll(async () => {
     await client.destroy();
   });
+
+  it.each(["enabled", "disabled", "no-builtins", "post"] as const)(
+    "honors automatic retry policy: %s",
+    async (mode) => {
+      let attempts = 0;
+      const retryClient = new HyperClient(
+        {
+          builtInPlugins: mode !== "no-builtins",
+          retry: { enabled: mode !== "disabled", maxRetries: 1, baseDelay: 0, jitter: false },
+          cache: { enabled: false },
+          inflight: { enabled: false },
+        },
+        {
+          async execute() {
+            attempts++;
+            return {
+              status: attempts === 1 ? 503 : 200,
+              headers: { "content-type": "text/plain" },
+              body: new TextEncoder().encode(attempts === 1 ? "unavailable" : "ok"),
+            };
+          },
+        },
+      );
+
+      try {
+        if (mode === "post") {
+          await retryClient.post("https://example.test/retry", "body");
+        } else {
+          await retryClient.get("https://example.test/retry");
+        }
+        expect(attempts).toBe(mode === "enabled" ? 2 : 1);
+      } finally {
+        await retryClient.destroy();
+      }
+    },
+  );
+
+  it.each(["protocols", "senders", "receivers", "customSender"] as const)(
+    "preserves configured REST registration through %s",
+    async (source) => {
+      class CustomSender extends RestSender {}
+      class CustomReceiver extends RestReceiver {}
+      const sender = new CustomSender();
+      const receiver = new CustomReceiver();
+      const config: HyperClientOptions = { builtInPlugins: false };
+      if (source === "protocols") {
+        config.protocols = [{ ...RestProtocol, name: "CustomRest", sender, receiver }];
+      } else if (source === "senders") {
+        config.senders = [sender];
+      } else if (source === "receivers") {
+        config.receivers = [receiver];
+      } else {
+        config.customSender = sender;
+      }
+      const configuredClient = new HyperClient(config);
+      try {
+        if (source === "protocols") {
+          expect(await configuredClient.getProtocolName("rest")).toBe("CustomRest");
+        }
+        if (source !== "receivers") {
+          expect(await configuredClient.getSenderName("rest")).toBe("CustomSender");
+        }
+        if (source === "receivers" || source === "protocols") {
+          expect(await configuredClient.getReceiverName("rest")).toBe("CustomReceiver");
+        }
+      } finally {
+        await configuredClient.destroy();
+      }
+    },
+  );
 
   it("performs GET and parses JSON", async () => {
     const res = await client.get<{ ok: boolean; timestamp: number }>(`${BASE}/json`);
@@ -193,6 +265,7 @@ describe("HyperClient", () => {
     const authClient = new HyperClient(
       {
         auth: {
+          allowedOrigins: ["http://example.test"],
           rest: { type: "bearer", getToken: () => "access-token" },
         },
       },
@@ -220,13 +293,214 @@ describe("HyperClient", () => {
     }
   });
 
-  it("adds a SHA-256 Digest header for requests with a body", async () => {
+  it.each(["query", "header"] as const)(
+    "isolates configured %s API-key authentication with a credential-free cache key",
+    async (location) => {
+      let identity = "user:one";
+      let credential = "secret-one";
+      let networkCalls = 0;
+      const keys: string[] = [];
+      const authClient = new HyperClient(
+        {
+          auth: {
+            allowedOrigins: ["https://api.example.test"],
+            rest: {
+              type: "api-key",
+              location,
+              name: "custom_credential",
+              getValue: () => credential,
+              getCacheKey: () => identity,
+            },
+          },
+          inflight: { enabled: false },
+          cache: {
+            key(request, context) {
+              const scope = context?.state["@hyperttp/auth.identity"];
+              if (typeof scope !== "string") return;
+              const input = request.input as { url: string };
+              const url = new URL(input.url);
+              url.searchParams.delete("custom_credential");
+              const key = JSON.stringify([request.protocol, url.toString(), scope]);
+              keys.push(key);
+              return key;
+            },
+          },
+        },
+        {
+          async execute(request) {
+            networkCalls++;
+            if (location === "query") {
+              expect(new URL(request.url).searchParams.get("custom_credential")).toBe(credential);
+            } else {
+              expect(request.headers.custom_credential).toBe(credential);
+            }
+            return {
+              status: 200,
+              headers: { "content-type": "application/json" },
+              body: new TextEncoder().encode(JSON.stringify({ identity })),
+            };
+          },
+        },
+      );
+
+      try {
+        const url = "https://api.example.test/me";
+        expect(await authClient.get(url)).toEqual({ identity: "user:one" });
+        expect(await authClient.get(url)).toEqual({ identity: "user:one" });
+        expect(networkCalls).toBe(1);
+
+        identity = "user:two";
+        credential = "secret-two";
+        expect(await authClient.get(url)).toEqual({ identity: "user:two" });
+        expect(networkCalls).toBe(2);
+
+        identity = "user:one";
+        credential = "rotated-secret";
+        expect(await authClient.get(url)).toEqual({ identity: "user:one" });
+        expect(networkCalls).toBe(2);
+        expect(keys.join(" ")).not.toMatch(/secret/);
+      } finally {
+        await authClient.destroy();
+      }
+    },
+  );
+
+  it("bypasses default caching for configured Bearer authentication without a safe key", async () => {
+    let networkCalls = 0;
+    const authClient = new HyperClient(
+      {
+        auth: {
+          allowedOrigins: ["https://api.example.test"],
+          bearer: { getToken: () => "secret-token" },
+        },
+        inflight: { enabled: false },
+      },
+      {
+        async execute(request) {
+          expect(request.headers.authorization).toBe("Bearer secret-token");
+          networkCalls++;
+          return {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+            body: new TextEncoder().encode("ok"),
+          };
+        },
+      },
+    );
+
+    try {
+      await authClient.get("https://api.example.test/me");
+      await authClient.get("https://api.example.test/me");
+      expect(networkCalls).toBe(2);
+    } finally {
+      await authClient.destroy();
+    }
+  });
+
+  it.each(["bearer", "query", "header"] as const)(
+    "isolates concurrent %s auth identities while deduplicating the same identity",
+    async (kind) => {
+      const sessions = new AsyncLocalStorage<{ identity: string; credential: string }>();
+      const session = () => {
+        const value = sessions.getStore();
+        if (!value) throw new Error("Missing test session");
+        return value;
+      };
+      let networkCalls = 0;
+      let keyedRequests = 0;
+      let markAllKeyed!: () => void;
+      let releaseRequests!: () => void;
+      const allKeyed = new Promise<void>((resolve) => {
+        markAllKeyed = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseRequests = resolve;
+      });
+      const keys: string[] = [];
+      const authClient = new HyperClient(
+        {
+          auth: {
+            allowedOrigins: ["https://api.example.test"],
+            getCacheKey: () => session().identity,
+            rest:
+              kind === "bearer"
+                ? { type: "bearer", getToken: () => session().credential }
+                : {
+                    type: "api-key",
+                    location: kind,
+                    name: "custom_credential",
+                    getValue: () => session().credential,
+                  },
+          },
+          cache: { enabled: false },
+          inflight: {
+            keyExtractor(request) {
+              const input = request.input as { url: string };
+              const url = new URL(input.url);
+              url.searchParams.delete("custom_credential");
+              const key = url.toString();
+              keys.push(key);
+              if (++keyedRequests === 3) markAllKeyed();
+              return key;
+            },
+          },
+        },
+        {
+          async execute(request) {
+            networkCalls++;
+            const credential =
+              kind === "bearer"
+                ? request.headers.authorization
+                : kind === "query"
+                  ? new URL(request.url).searchParams.get("custom_credential")
+                  : request.headers.custom_credential;
+            const expected = session().credential;
+            expect(credential).toBe(kind === "bearer" ? `Bearer ${expected}` : expected);
+            const identity = session().identity;
+            await release;
+            return {
+              status: 200,
+              headers: { "content-type": "application/json" },
+              body: new TextEncoder().encode(JSON.stringify({ identity })),
+            };
+          },
+        },
+      );
+      const send = (identity: string, credential: string) =>
+        sessions.run({ identity, credential }, () => authClient.get("https://api.example.test/me"));
+      const requests = Promise.all([
+        send("user:one", "secret-one"),
+        send("user:one", "secret-one"),
+        send("user:two", "secret-two"),
+      ]);
+
+      try {
+        await allKeyed;
+        releaseRequests();
+        expect(await requests).toEqual([
+          { identity: "user:one" },
+          { identity: "user:one" },
+          { identity: "user:two" },
+        ]);
+        expect(networkCalls).toBe(2);
+        expect(keys).toHaveLength(3);
+        expect(keys.join(" ")).not.toMatch(/secret/);
+      } finally {
+        releaseRequests();
+        await requests.catch(() => {});
+        await authClient.destroy();
+      }
+    },
+  );
+
+  it("adds a SHA-256 Content-Digest header for requests with a body", async () => {
     let digest: string | string[] | undefined;
     const cryptoClient = new HyperClient(
       {},
       {
         async execute(request) {
-          digest = request.headers.digest;
+          digest = request.headers["content-digest"];
+          expect(request.headers.digest).toBeUndefined();
           return {
             status: 200,
             headers: { "content-type": "text/plain" },
@@ -387,6 +661,60 @@ describe("HyperClient", () => {
     const emptyClient = new HyperClient();
     expect(emptyClient).toBeInstanceOf(HyperClient);
     await emptyClient.destroy();
+  });
+
+  it("creates distinct built-in retry instances for independent and derived clients", async () => {
+    const parent = new HyperClient({}, successfulTransport());
+    const independent = new HyperClient({}, successfulTransport());
+    const child = parent.extend({});
+    try {
+      expect(await parent.get("https://example.test/parent")).toBeDefined();
+      expect(await independent.get("https://example.test/independent")).toBeDefined();
+      expect(await child.get("https://example.test/child")).toBeDefined();
+    } finally {
+      await child.destroy();
+      await independent.destroy();
+      await parent.destroy();
+    }
+  });
+
+  it("preserves a configured plain transport identity and closes it once across extend", async () => {
+    let closes = 0;
+    const transport = {
+      ...successfulTransport(),
+      close: async () => {
+        closes++;
+      },
+    };
+    const parent = new HyperClient({ builtInPlugins: false, customTransport: transport });
+    const child = parent.extend({});
+    expect(parent["_config"].customTransport).toBe(transport);
+    expect(child["_config"].customTransport).toBe(transport);
+    await parent.get("https://example.test/parent");
+    await child.get("https://example.test/child");
+    await child.destroy();
+    expect(closes).toBe(0);
+    await parent.destroy();
+    expect(closes).toBe(1);
+  });
+
+  it("recreates user plugin factories when extending without repeating plugin setup", async () => {
+    let setups = 0;
+    const parent = new HyperClient({
+      builtInPlugins: false,
+      pluginFactories: [
+        () => ({
+          name: "fresh",
+          setup() {
+            setups++;
+          },
+        }),
+      ],
+    });
+    const child = parent.extend({});
+    expect(setups).toBe(2);
+    await child.destroy();
+    await parent.destroy();
   });
 
   it("extend preserves an explicitly injected transport", async () => {

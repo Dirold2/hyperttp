@@ -1,6 +1,6 @@
 import type {
   AnyHyperProtocol,
-  SenderProtocol,
+  HyperProtocolName,
   HyperPlugin,
   HyperTransport,
   HyperClientOptions,
@@ -17,12 +17,15 @@ import { withMetrics } from "@hyperttp/metrics";
 import { withParser } from "@hyperttp/parser";
 import { withQueue } from "@hyperttp/queue";
 import { withRateLimit } from "@hyperttp/ratelimit";
+import { createRetryPlugin } from "@hyperttp/retry";
 import { withSerializer } from "@hyperttp/serializer";
 import { defaultConfig } from "../defaultConfig.js";
 import { RequestBuilder, type ResponseType } from "../Utils/RequestBuilder.js";
 import type { HttpMethod, RestInput, RestRequestOptions } from "@hyperttp/core/rest";
 import { withCrypto } from "@hyperttp/crypto";
 import { withAuth } from "@hyperttp/auth";
+
+import { createServer, type HyperServer, type ServerOptions } from "../Server/HyperServer.js";
 
 export type ShortcutRequestOptions = RestRequestOptions & {
   responseType?: ResponseType;
@@ -116,6 +119,8 @@ export class HyperClient {
       defaultConfig as Record<string, unknown>,
       config as Record<string, unknown>,
     ) as HyperClientOptions;
+    // Transport instances have identity and lifecycle ownership; never deep-clone them.
+    if (config.customTransport) this._config.customTransport = config.customTransport;
     this._transport = transport;
 
     this._engine = new HyperCore(this._config, transport);
@@ -123,7 +128,9 @@ export class HyperClient {
     if (this._config.builtInPlugins !== false) {
       this.useDefaultPlugins();
     }
-    this.registerProtocol(RestProtocol);
+    if (!this._engine.getProtocol("rest")) {
+      this.registerProtocol(RestProtocol);
+    }
     this.exposeProtocolNamespaces();
   }
 
@@ -131,11 +138,12 @@ export class HyperClient {
    * @ru Подключает стандартный набор плагинов клиента.
    * @en Registers the client's built-in plugin set.
    */
-  private registerProtocol<P extends SenderProtocol>(protocol: AnyHyperProtocol<P>): void {
+  private registerProtocol<P extends HyperProtocolName>(protocol: AnyHyperProtocol<P>): void {
     this._engine.registerProtocol(protocol);
   }
 
   private useDefaultPlugins(): void {
+    this.use(createRetryPlugin());
     this.use(withInterceptors(this._config.interceptors));
     if (this._config.auth) {
       this.use(withAuth(this._config.auth));
@@ -158,8 +166,8 @@ export class HyperClient {
    * @en Returns names of built-in and configured protocols whose namespaces
    * should be exposed on the client.
    */
-  private getProtocolNamespaceNames(): Set<SenderProtocol> {
-    const names = new Set<SenderProtocol>(KNOWN_PROTOCOLS);
+  private getProtocolNamespaceNames(): Set<HyperProtocolName> {
+    const names = new Set<HyperProtocolName>(KNOWN_PROTOCOLS);
 
     for (const protocol of this._config.protocols ?? []) {
       names.add(protocol.protocol);
@@ -224,7 +232,7 @@ export class HyperClient {
    * @param protocol - Идентификатор протокола; по умолчанию `rest`.
    * @returns Promise resolving to the protocol name.
    */
-  public async getProtocolName(protocol?: SenderProtocol): Promise<string> {
+  public async getProtocolName(protocol?: HyperProtocolName): Promise<string> {
     return this._engine.getProtocolName(protocol);
   }
 
@@ -234,7 +242,7 @@ export class HyperClient {
    * @param protocol - Идентификатор протокола; по умолчанию `rest`.
    * @returns Promise resolving to the receiver name.
    */
-  public async getReceiverName(protocol?: SenderProtocol): Promise<string> {
+  public async getReceiverName(protocol?: HyperProtocolName): Promise<string> {
     return this._engine.getReceiverName(protocol);
   }
 
@@ -244,7 +252,7 @@ export class HyperClient {
    * @param protocol - Идентификатор протокола; по умолчанию `rest`.
    * @returns Promise resolving to the sender name.
    */
-  public async getSenderName(protocol?: SenderProtocol): Promise<string> {
+  public async getSenderName(protocol?: HyperProtocolName): Promise<string> {
     return this._engine.getSenderName(protocol);
   }
 
@@ -286,6 +294,14 @@ export class HyperClient {
     return response.data;
   }
 
+  /** Creates a REST server facade without opening a port. Services remain application-owned. */
+  public server<S = Record<never, never>>(
+    port: number,
+    options: Omit<ServerOptions<S>, "port"> = {},
+  ): HyperServer<S> {
+    return createServer(this._engine, { ...options, port });
+  }
+
   /**
    * @ru Запускает REST-сервер.
    * @en Starts a REST server.
@@ -302,11 +318,11 @@ export class HyperClient {
    * @param options - Параметры прослушивания и необязательный обработчик протокола.
    * @returns Promise resolving to the running server handle.
    */
-  public listen<P extends SenderProtocol>(
+  public listen<P extends HyperProtocolName>(
     options: HyperServerListenOptions<P>,
   ): Promise<TransportServer>;
 
-  public listen<P extends SenderProtocol>(
+  public listen<P extends HyperProtocolName>(
     options: Omit<HyperServerListenOptions<"rest">, "protocol"> | HyperServerListenOptions<P>,
   ): Promise<TransportServer> {
     if ("protocol" in options) {
@@ -626,6 +642,8 @@ export class HyperClient {
       this._config as Record<string, unknown>,
       options as Record<string, unknown>,
     ) as HyperClientOptions;
+    if (options.customTransport) config.customTransport = options.customTransport;
+    else if (this._config.customTransport) config.customTransport = this._config.customTransport;
     const transport = options.customTransport ?? this._transport;
 
     return new HyperClient(config, transport);
