@@ -1,3 +1,4 @@
+import { RestProtocol } from "@hyperttp/protocol-rest";
 import type {
   AnyHyperProtocol,
   HyperProtocolName,
@@ -9,7 +10,7 @@ import type {
   HyperServerListenOptions,
   TransportServer,
 } from "@hyperttp/types";
-import { deepMerge, HyperCore, KNOWN_PROTOCOLS, RestProtocol } from "@hyperttp/core";
+import { deepMerge, HyperCore, KNOWN_PROTOCOLS } from "@hyperttp/core";
 import { withCache } from "@hyperttp/cache";
 import { withInflight } from "@hyperttp/inflight";
 import { withInterceptors } from "@hyperttp/interceptors";
@@ -21,7 +22,7 @@ import { createRetryPlugin } from "@hyperttp/retry";
 import { withSerializer } from "@hyperttp/serializer";
 import { defaultConfig } from "../defaultConfig.js";
 import { RequestBuilder, type ResponseType } from "../Utils/RequestBuilder.js";
-import type { HttpMethod, RestInput, RestRequestOptions } from "@hyperttp/core/rest";
+import type { HttpMethod, RestInput, RestRequestOptions } from "@hyperttp/protocol-rest";
 import { withCrypto } from "@hyperttp/crypto";
 import { withAuth } from "@hyperttp/auth";
 
@@ -167,7 +168,7 @@ export class HyperClient {
    * should be exposed on the client.
    */
   private getProtocolNamespaceNames(): Set<HyperProtocolName> {
-    const names = new Set<HyperProtocolName>(KNOWN_PROTOCOLS);
+    const names = new Set<HyperProtocolName>(["rest", ...KNOWN_PROTOCOLS]);
 
     for (const protocol of this._config.protocols ?? []) {
       names.add(protocol.protocol);
@@ -294,12 +295,20 @@ export class HyperClient {
     return response.data;
   }
 
-  /** Creates a REST server facade without opening a port. Services remain application-owned. */
+  /** Creates a server facade without opening a port. Services remain application-owned. */
+  public server<S = Record<never, never>>(options: ServerOptions<S>): HyperServer<S>;
   public server<S = Record<never, never>>(
     port: number,
+    options?: Omit<ServerOptions<S>, "port">,
+  ): HyperServer<S>;
+  public server<S = Record<never, never>>(
+    portOrOptions: number | ServerOptions<S>,
     options: Omit<ServerOptions<S>, "port"> = {},
   ): HyperServer<S> {
-    return createServer(this._engine, { ...options, port });
+    return createServer(
+      this._engine,
+      typeof portOrOptions === "number" ? { ...options, port: portOrOptions } : portOrOptions,
+    );
   }
 
   /**

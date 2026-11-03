@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { HyperClient, RequestBuilder, type HyperTransport } from "../src/index.js";
-import { RestProtocol, RestSender, RestReceiver } from "@hyperttp/core";
+import { RestProtocol, RestSender, RestReceiver } from "@hyperttp/protocol-rest";
 import type { HyperClientOptions, HyperProtocol } from "@hyperttp/types";
 
 const BASE = inject("benchmarkBaseUrl");

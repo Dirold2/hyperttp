@@ -589,8 +589,60 @@ Handlers receive decoded path `params`, inferred `services`, the REST request fi
 
 Routing is case-sensitive with exact trailing slashes; literal segments take precedence over parameters independent of registration order. Equal method/pattern registrations (including renamed parameters) are rejected. Unknown paths return 404; a known path with an unregistered method returns 405 with `Allow`. HEAD/OPTIONS must be registered explicitly; no implicit GET fallback or CORS policy is added. Middleware wraps the handler/404/405 response, can short-circuit, and may call `next()` once. Malformed matched path parameters return 400 before route middleware.
 
-Core `onServerRequest`, `onServerResponse`, `onServerError` and `onServerSettled` hooks still wrap this facade. Client auth/cache hooks are not inbound authorization: use server middleware or dedicated server hooks. This first facade is REST-only; no WebRTC server operations are inferred from client methods.
+Core `onServerRequest`, `onServerResponse`, `onServerError` and `onServerSettled` hooks still wrap this facade. Client auth/cache hooks are not inbound authorization: use server middleware or dedicated server hooks. External protocol namespaces come from registered protocol modules, not from client methods.
 
 ## License
 
 MIT
+
+### External server namespaces
+
+Protocol packages can extend the server without adding dependencies to Hyperttp:
+
+```ts
+import type { ProtocolRouteHandler, ProtocolServerHost } from "@hyperttp/types";
+
+declare module "@hyperttp/types" {
+  interface ProtocolServerRequestMap {
+    example: { message: string };
+  }
+  interface ProtocolServerResponseMap {
+    example: { reply: string };
+  }
+  interface HyperServerProtocols<_Services, _Server> {
+    readonly example: {
+      handle(handler: ProtocolRouteHandler<"example", _Services>): _Server;
+    };
+  }
+}
+
+function createExampleServer<Services, Server>(host: ProtocolServerHost<Services, Server>) {
+  return {
+    handle(handler: ProtocolRouteHandler<"example", Services>): Server {
+      return host.configure({
+        protocol: "example",
+        handler: (request, context) => handler({ request, context, services: host.services }),
+      });
+    },
+  };
+}
+```
+
+The protocol module supplies `server: createExampleServer` alongside its sender
+or receiver. Register that module in `new HyperClient({ protocols: [...] })`.
+Then `client.server({ port, services }).example.handle(...)` has inferred request,
+response and DI types. Module augmentation alone only declares types; registering
+the protocol supplies the implementation. Namespace names must match protocol
+identifiers and must not shadow built-in server members (`rest`, `start`, `close`,
+`use`, etc.). Each facade supports one external endpoint or REST routes, not both.
+
+WebRTC-specific server types now come from `@hyperttp/protocol-webrtc` rather
+than `hyperttp`; the `.webrtc.signal(...)` call shape is unchanged.
+
+Server contract types (`ServerOptions`, `RouteContext`, `RouteHandler`,
+`ServerMiddleware`, `RouteParams`) can be imported directly from `@hyperttp/types`.
+Their existing `hyperttp` exports remain available for compatibility.
+
+REST is provided by the direct dependency `@hyperttp/protocol-rest`, automatically
+registered by HyperClient. Direct HyperCore users must register RestProtocol explicitly.
+Import REST-specific types from `@hyperttp/protocol-rest`.

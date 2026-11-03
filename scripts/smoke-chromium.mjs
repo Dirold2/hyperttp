@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = new URL("../build/chromium-smoke/", import.meta.url);
 await mkdir(output, { recursive: true });
-const source = (await readFile(new URL("smoke-runtime.mjs", import.meta.url), "utf8"))
-  .replaceAll("console.log(", "report(");
+const source = (await readFile(new URL("smoke-runtime.mjs", import.meta.url), "utf8")).replaceAll(
+  "console.log(",
+  "report(",
+);
 const lines = source.split("\n");
 const imports = lines.filter((line) => line.startsWith("import ")).join("\n");
 const body = lines.filter((line) => !line.startsWith("import ")).join("\n");

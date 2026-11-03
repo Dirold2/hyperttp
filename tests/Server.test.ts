@@ -1,10 +1,16 @@
+import { RestProtocol } from "@hyperttp/protocol-rest";
 import { describe, expect, it, vi } from "vitest";
-import type { TransportListenOptions, TransportRequest } from "@hyperttp/types";
+import type {
+  AnyHyperProtocol,
+  AnyHyperReceiver,
+  TransportListenOptions,
+  TransportRequest,
+} from "@hyperttp/types";
 import { HyperCore } from "@hyperttp/core";
 import { HyperClient } from "../src/index.js";
-import { createServer } from "../src/Hyperttp/Server/HyperServer.js";
+import { createServer, HyperServer } from "../src/Hyperttp/Server/HyperServer.js";
 
-function fixture() {
+function fixture(receivers: AnyHyperReceiver[] = [], protocols: AnyHyperProtocol[] = []) {
   let receive: TransportListenOptions["onRequest"] | undefined;
   const close = vi.fn(async () => {});
   const listen = vi.fn(async (options: TransportListenOptions) => {
@@ -12,7 +18,7 @@ function fixture() {
     return { close };
   });
   const core = new HyperClient(
-    { builtInPlugins: false },
+    { builtInPlugins: false, receivers, protocols },
     {
       execute: async () => {
         throw new Error("unexpected client request");
@@ -30,6 +36,15 @@ function fixture() {
 }
 
 describe("optional server facade", () => {
+  it("preserves the public constructor and fluent proxy identity", async () => {
+    const core = new HyperCore();
+    const server = new HyperServer(core, { port: 0, services: { token: "test" } });
+    expect(server).toBeInstanceOf(HyperServer);
+    expect(server.use((_context, next) => next())).toBe(server);
+    expect(server.rest.get("/", ({ services }) => ({ body: services.token }))).toBe(server);
+    await server.close();
+    await core.destroy();
+  });
   it("defers startup, shares concurrent startup and routes typed services and decoded params", async () => {
     const { core, listen, close, request } = fixture();
     const find = vi.fn((id: string) => ({ id }));
@@ -119,7 +134,7 @@ describe("optional server facade", () => {
     });
     const close = vi.fn(async () => {});
     const core = new HyperCore(
-      {},
+      { protocols: [RestProtocol] },
       {
         execute: async () => {
           throw new Error("unused");
@@ -212,3 +227,83 @@ function typeContracts(core: HyperClient) {
   });
 }
 void typeContracts;
+
+declare module "@hyperttp/types" {
+  interface ProtocolServerRequestMap {
+    "test-server": { message: string };
+  }
+  interface ProtocolServerResponseMap {
+    "test-server": { reply: string };
+  }
+  interface HyperServerProtocols<_Services, _Server> {
+    readonly "test-server": {
+      handle(
+        handler: import("@hyperttp/types").ProtocolRouteHandler<"test-server", _Services>,
+      ): _Server;
+    };
+  }
+}
+
+describe("external server facade", () => {
+  it("loads a protocol-owned namespace and injects typed services", async () => {
+    const factory = vi.fn();
+    const { core, listen, close } = fixture(
+      [],
+      [
+        {
+          protocol: "test-server",
+          receiver: {
+            protocol: "test-server",
+            receive: (request: TransportRequest) => request.body,
+            handle: () => ({}),
+            respond: (body: unknown) => ({ status: 200, headers: {}, body }),
+          },
+          server: (host) => {
+            factory();
+            return {
+              handle: (
+                handler: import("@hyperttp/types").ProtocolRouteHandler<
+                  "test-server",
+                  typeof host.services
+                >,
+              ) =>
+                host.configure({
+                  protocol: "test-server",
+                  handler: (request, context) =>
+                    handler({ request, context, services: host.services }),
+                }),
+            };
+          },
+        },
+      ],
+    );
+    const services = { prefix: "reply:", close: vi.fn() };
+    const server = core.server({ port: 0, services });
+    expect(server["test-server"]).toBe(server["test-server"]);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(
+      server["test-server"].handle(({ request, services: injected }) => ({
+        reply: injected.prefix + request.message,
+      })),
+    ).toBe(server);
+    expect(() => server.rest.get("/", () => ({}))).toThrow("separate server facades");
+    expect(() => server.use((_ctx, next) => next())).toThrow();
+    await server.start();
+    const options = listen.mock.calls[0]![0];
+    const response = await options.onRequest!({
+      protocol: "test-server",
+      method: "POST",
+      url: "/",
+      headers: {},
+      body: { message: "hello" },
+    });
+    expect(response.body).toEqual({ reply: "reply:hello" });
+    expect(() => server["test-server"].handle(() => ({ reply: "late" }))).toThrow(
+      "Registration is closed",
+    );
+    await server.close();
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(services.close).not.toHaveBeenCalled();
+    await core.destroy();
+  });
+});
