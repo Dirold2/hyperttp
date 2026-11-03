@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/Hyperttp/defaultConfig.ts"],
+  "sourcesContent": ["import type { HyperClientOptions } from \"@hyperttp/types\";\n\nexport const defaultConfig: HyperClientOptions = {\n  retry: {\n    maxRetries: 3,\n    baseDelay: 100,\n    maxDelay: 5000,\n    jitter: true,\n  },\n  trackMetrics: true,\n  verbose: false,\n};\n"],
+  "mappings": "aAEO,aAAM,cAAoC,CAC/C,MAAO,CACL,WAAY,EACZ,UAAW,IACX,SAAU,IACV,OAAQ,IAEV,aAAc,GACd,QAAS",
+  "names": []
+}
