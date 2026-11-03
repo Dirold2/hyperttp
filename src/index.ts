@@ -4,7 +4,7 @@ export { Request, PreparedRequest, UrlExtractor } from "./Hyperttp/index.js";
 
 export type { RequestQuery } from "./Hyperttp/Utils/query.js";
 export type { RequestHeaders, RequestBodyData, RequestConfig } from "./Hyperttp/Request.js";
-export type { HttpMethod, RestRequestOptions } from "@hyperttp/core/rest";
+export type { HttpMethod, RestRequestOptions } from "@hyperttp/protocol-rest";
 export type { HyperClientOptions, HyperTransport, UniversalResponse } from "@hyperttp/types";
 
 export type * from "./Types/index.js";

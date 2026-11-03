@@ -1,4 +1,4 @@
-import type { HttpMethod } from "@hyperttp/core/rest";
+import type { HttpMethod } from "@hyperttp/protocol-rest";
 import type { RequestQuery } from "./Utils/query.js";
 
 export type RequestHeaders = Record<string, string>;

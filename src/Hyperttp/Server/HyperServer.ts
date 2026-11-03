@@ -1,38 +1,25 @@
-import type { ServerRequestContext, TransportServer } from "@hyperttp/types";
+import type {
+  HyperProtocolName,
+  HyperServerListenOptions,
+  HyperServerProtocols,
+  ProtocolServerHost,
+  RouteHandler,
+  ServerMiddleware,
+  ServerOptions,
+  RouteContext,
+  ServerRequestContext,
+  TransportServer,
+} from "@hyperttp/types";
 import type { HyperCore } from "@hyperttp/core";
-import type { HttpMethod, RestServerInput, RestServerResponse } from "@hyperttp/core/rest";
+import type { HttpMethod, RestServerInput, RestServerResponse } from "@hyperttp/protocol-rest";
 
-/** Path parameters are decoded once, after matching path segments. */
-export type RouteParams<Path extends string> = string extends Path
-  ? Readonly<Record<string, string>>
-  : Path extends `${string}:${infer Param}/${infer Rest}`
-    ? Readonly<Record<Param, string>> & RouteParams<Rest>
-    : Path extends `${string}:${infer Param}`
-      ? Readonly<Record<Param, string>>
-      : Readonly<Record<never, string>>;
-
-export interface RouteContext<Services, Path extends string = string> extends RestServerInput {
-  readonly params: RouteParams<Path>;
-  readonly services: Services;
-  readonly context: ServerRequestContext;
-}
-
-export type RouteHandler<Services, Path extends string = string> = (
-  context: RouteContext<Services, Path>,
-) => RestServerResponse | Promise<RestServerResponse>;
-
-export type ServerMiddleware<Services> = (
-  context: RouteContext<Services>,
-  next: () => Promise<RestServerResponse>,
-) => RestServerResponse | Promise<RestServerResponse>;
-
-export interface ServerOptions<Services = Record<never, never>> {
-  port: number;
-  host?: string;
-  signal?: AbortSignal;
-  /** Application-owned objects; closing the server does not dispose them. */
-  services?: Services;
-}
+export type {
+  RouteParams,
+  RouteContext,
+  RouteHandler,
+  ServerMiddleware,
+  ServerOptions,
+} from "@hyperttp/types";
 
 type Segment = { literal: string } | { param: string };
 type Route<Services> = {
@@ -60,8 +47,13 @@ function parsePath(path: string): Segment[] {
     });
 }
 
-/** Optional REST routing facade. Constructing it never opens a port. */
-export class HyperServer<Services = Record<never, never>> {
+export type HyperServer<Services = Record<never, never>> = HyperServerImplementation<Services> &
+  HyperServerProtocols<Services, HyperServer<Services>>;
+
+/** Optional protocol server facade. Constructing it never opens a port. */
+class HyperServerImplementation<Services = Record<never, never>> {
+  private protocolEndpoint?: () => Promise<TransportServer>;
+  private readonly protocolFacades = new Map<string, object>();
   private readonly routes: Route<Services>[] = [];
   private readonly middleware: ServerMiddleware<Services>[] = [];
   private state: "configuring" | "starting" | "running" | "closing" | "closed" = "configuring";
@@ -69,6 +61,7 @@ export class HyperServer<Services = Record<never, never>> {
   private closing?: Promise<void>;
   private readonly services: Services;
   private readonly options: ServerOptions<Services>;
+  private readonly facade: HyperServer<Services>;
 
   constructor(
     private readonly core: HyperCore,
@@ -79,6 +72,49 @@ export class HyperServer<Services = Record<never, never>> {
     }
     this.options = { ...options };
     this.services = options.services ?? (Object.freeze({}) as Services);
+    // All fluent paths, including arrow functions, must return the public proxy.
+    this.facade = new Proxy(this, {
+      get: (target, key, receiver) => {
+        if (Reflect.has(target, key) || typeof key !== "string")
+          return Reflect.get(target, key, receiver);
+        return (receiver as HyperServer<Services>).protocolFacade(key);
+      },
+    }) as unknown as HyperServer<Services>;
+    return this.facade;
+  }
+
+  /** Lazily constructs protocol-owned namespaces from explicitly registered modules. */
+  private protocolFacade(name: string): object | undefined {
+    const cached = this.protocolFacades.get(name);
+    if (cached) return cached;
+    const factory = this.core.getProtocol(name)?.server;
+    if (!factory) return undefined;
+    const host: ProtocolServerHost<Services, HyperServer<Services>> = {
+      services: this.services,
+      configure: (options) => this.configureProtocol(options),
+    };
+    const facade = factory(host);
+    this.protocolFacades.set(name, facade);
+    return facade;
+  }
+
+  private configureProtocol<P extends HyperProtocolName>(
+    options: Omit<HyperServerListenOptions<P>, "port" | "host" | "signal">,
+  ): HyperServer<Services> {
+    this.assertConfiguring();
+    if (this.routes.length || this.middleware.length)
+      throw new Error("[HyperServer] REST and external protocols require separate server facades.");
+    if (this.protocolEndpoint)
+      throw new Error("[HyperServer] Only one protocol endpoint per server is supported.");
+    const listener = { ...options };
+    this.protocolEndpoint = () =>
+      this.core.listen({
+        ...listener,
+        port: this.options.port,
+        host: this.options.host,
+        signal: this.options.signal,
+      });
+    return this.facade;
   }
 
   readonly rest = {
@@ -125,8 +161,10 @@ export class HyperServer<Services = Record<never, never>> {
     method: HttpMethod,
     path: P,
     handler: RouteHandler<Services, P>,
-  ): this {
+  ): HyperServer<Services> {
     this.assertConfiguring();
+    if (this.protocolEndpoint)
+      throw new Error("[HyperServer] REST and external protocols require separate server facades.");
     const segments = parsePath(path);
     if (
       this.routes.some(
@@ -145,13 +183,17 @@ export class HyperServer<Services = Record<never, never>> {
     }
     // The matcher constructs exactly the named parameters of this registered path.
     this.routes.push({ method, segments, handler: handler as RouteHandler<Services> });
-    return this;
+    return this.facade;
   }
 
-  use(middleware: ServerMiddleware<Services>): this {
+  use(middleware: ServerMiddleware<Services>): HyperServer<Services> {
     this.assertConfiguring();
+    if (this.protocolEndpoint)
+      throw new Error(
+        "[HyperServer] REST middleware cannot be used with an external protocol facade.",
+      );
     this.middleware.push(middleware);
-    return this;
+    return this.facade;
   }
 
   private async handle(
@@ -228,24 +270,25 @@ export class HyperServer<Services = Record<never, never>> {
     }
     if (this.startup) return this.startup;
     this.state = "starting";
-    this.startup = this.core
-      .listen({
-        protocol: "rest",
-        port: this.options.port,
-        host: this.options.host,
-        signal: this.options.signal,
-        handler: (request, context) => this.handle(request, context),
-      })
-      .then(
-        (handle) => {
-          if (this.state === "starting") this.state = "running";
-          return handle;
-        },
-        (error: unknown) => {
-          if (this.state !== "closing") this.state = "closed";
-          throw error;
-        },
-      );
+    const startup = this.protocolEndpoint
+      ? this.protocolEndpoint()
+      : this.core.listen({
+          protocol: "rest",
+          port: this.options.port,
+          host: this.options.host,
+          signal: this.options.signal,
+          handler: (request, context) => this.handle(request, context),
+        });
+    this.startup = startup.then(
+      (handle) => {
+        if (this.state === "starting") this.state = "running";
+        return handle;
+      },
+      (error: unknown) => {
+        if (this.state !== "closing") this.state = "closed";
+        throw error;
+      },
+    );
     return this.startup;
   }
 
@@ -269,6 +312,15 @@ export class HyperServer<Services = Record<never, never>> {
     return this.closing;
   }
 }
+
+/** The proxy supplies augmented namespaces; no class/interface merging is needed. */
+export const HyperServer = HyperServerImplementation as {
+  new <Services = Record<never, never>>(
+    core: HyperCore,
+    options: ServerOptions<Services>,
+  ): HyperServer<Services>;
+  readonly prototype: HyperServerImplementation;
+};
 
 /** Creates an optional server facade for an existing Core. */
 export function createServer<S = Record<never, never>>(

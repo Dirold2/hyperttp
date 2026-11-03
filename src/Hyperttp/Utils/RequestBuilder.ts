@@ -1,4 +1,4 @@
-import type { HttpMethod, RestRequestOptions } from "@hyperttp/core/rest";
+import type { HttpMethod, RestRequestOptions } from "@hyperttp/protocol-rest";
 import { HyperClient } from "../Client/HyperClient.js";
 import type { RequestQuery } from "./query.js";
 
