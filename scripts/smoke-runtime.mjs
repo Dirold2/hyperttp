@@ -13,7 +13,10 @@ const transport = {
       return { status: 503, headers: {}, body: new Uint8Array() };
     }
     if (request.url.endsWith("/unicode")) {
-      check(new TextDecoder().decode(request.body) === JSON.stringify({ text: "Привет 🌍" }), "UTF-8 body");
+      check(
+        new TextDecoder().decode(request.body) === JSON.stringify({ text: "Привет 🌍" }),
+        "UTF-8 body",
+      );
     }
     return {
       status: 200,
@@ -21,7 +24,9 @@ const transport = {
       body: new TextEncoder().encode('{"ok":true}'),
     };
   },
-  async close() { closes++; },
+  async close() {
+    closes++;
+  },
 };
 const options = {
   retry: { maxRetries: 1, baseDelay: 0, jitter: false },
@@ -33,7 +38,10 @@ const second = new HyperClient(options, transport);
 try {
   check((await first.get("https://example.test/retry")).ok, "Retry response");
   check(calls === 2, "Retry must execute twice");
-  check((await second.post("https://example.test/unicode", { text: "Привет 🌍" })).ok, "Unicode POST");
+  check(
+    (await second.post("https://example.test/unicode", { text: "Привет 🌍" })).ok,
+    "Unicode POST",
+  );
   const server = first.server(0, { services: { value: 42 } });
   server.rest.get("/health", ({ services }) => ({ body: services.value }));
   await server.close();
@@ -44,6 +52,10 @@ try {
 }
 check(closes === 1, "Shared transport closes once");
 let rejected = false;
-try { await first.get("https://example.test/after-destroy"); } catch { rejected = true; }
+try {
+  await first.get("https://example.test/after-destroy");
+} catch {
+  rejected = true;
+}
 check(rejected, "Send after destroy");
 console.log("hyperttp: retry, Unicode POST, independent clients, server facade and shutdown OK");

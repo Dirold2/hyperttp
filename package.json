@@ -1,12 +1,34 @@
 {
   "name": "hyperttp",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
+  "keywords": [
+    "bun",
+    "cache",
+    "client",
+    "cookies",
+    "deno",
+    "fetch",
+    "http",
+    "hyperttp",
+    "isomorphic",
+    "logger",
+    "queue",
+    "rate-limit",
+    "retry",
+    "undici"
+  ],
+  "license": "MIT",
+  "author": "dirold2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dirold2/hyperttp.git"
+  },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "sideEffects": false,
-  "engines": {
-    "node": ">=22.19.0"
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,68 +37,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
-  "keywords": [
-    "http",
-    "client",
-    "fetch",
-    "undici",
-    "cache",
-    "rate-limit",
-    "queue",
-    "retry",
-    "cookies",
-    "logger",
-    "bun",
-    "deno",
-    "isomorphic",
-    "hyperttp"
-  ],
-  "author": "dirold2",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Dirold2/hyperttp.git"
-  },
-  "dependencies": {
-    "@hyperttp/auth": "^3.0.0",
-    "@hyperttp/cache": "^3.0.0",
-    "@hyperttp/core": "^3.0.2",
-    "@hyperttp/crypto": "^3.0.0",
-    "@hyperttp/inflight": "^3.0.1",
-    "@hyperttp/interceptors": "^3.0.0",
-    "@hyperttp/metrics": "^3.0.0",
-    "@hyperttp/parser": "^3.0.2",
-    "@hyperttp/queue": "^3.0.1",
-    "@hyperttp/ratelimit": "^3.0.0",
-    "@hyperttp/retry": "^3.0.0",
-    "@hyperttp/serializer": "^3.0.0",
-    "@hyperttp/types": "^0.5.0"
-  },
-  "devDependencies": {
-    "@dirold2/dev-tools": "^1.1.3",
-    "@types/node": "^26.6.6",
-    "@vitest/coverage-v8": "^5.1.0",
-    "chalk": "^6.0.1",
-    "dotenv-cli": "^11.1.0",
-    "esbuild": "^0.28.2",
-    "jiti": "^2.7.0",
-    "oxfmt": "^0.75.0",
-    "oxlint": "^1.90.0",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
-    "vitest": "^5.1.0"
-  },
   "scripts": {
-    "clean": "node --input-type=module -e 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true });'",
-    "build": "npm run clean && tsc && esbuild 'dist/**/*.js' --outdir=dist --allow-overwrite --minify --sourcemap && d-build",
-    "lock:bun": "bun install --lockfile-only",
-    "lock:deno": "deno check --node-modules-dir=auto --minimum-dependency-age=0 --lock=deno.lock --frozen=false dist/index.js",
-    "dist": "npm run lock:bun && npm run lock:deno && d-dist",
-    "deploy": "npm run build && npm run dist",
-    "pub": "d-publish",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint src tests vitest.config.ts",
     "lint:fix": "oxlint src tests vitest.config.ts --fix",
@@ -87,6 +48,40 @@
     "smoke:bun": "bun scripts/smoke-runtime.mjs",
     "smoke:deno": "deno run --no-config --no-lock --node-modules-dir=manual --allow-read --allow-env scripts/smoke-runtime.mjs",
     "smoke:browser": "node scripts/smoke-chromium.mjs",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "build": "node ../../scripts/build-package.ts",
+    "clean": "node --input-type=module -e 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true });'"
+  },
+  "dependencies": {
+    "@hyperttp/auth": "^3.0.1",
+    "@hyperttp/cache": "^3.0.1",
+    "@hyperttp/core": "^3.0.3",
+    "@hyperttp/crypto": "^3.0.1",
+    "@hyperttp/inflight": "^3.0.2",
+    "@hyperttp/interceptors": "^3.0.1",
+    "@hyperttp/metrics": "^3.0.2",
+    "@hyperttp/parser": "^3.0.3",
+    "@hyperttp/queue": "^3.0.2",
+    "@hyperttp/ratelimit": "^3.0.1",
+    "@hyperttp/retry": "^3.0.1",
+    "@hyperttp/serializer": "^3.0.1",
+    "@hyperttp/types": "^0.5.3",
+    "@hyperttp/protocol-rest": "^0.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
+    "chalk": "^6.0.1",
+    "dotenv-cli": "^11.1.0",
+    "esbuild": "^0.28.2",
+    "jiti": "^2.7.0",
+    "oxfmt": "^0.76.0",
+    "oxlint": "^1.90.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
   }
 }
