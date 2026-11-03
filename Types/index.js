@@ -1,2 +1,2 @@
-"use strict";export*from"./url-extractor.js";
+export*from"./url-extractor.js";
 //# sourceMappingURL=index.js.map

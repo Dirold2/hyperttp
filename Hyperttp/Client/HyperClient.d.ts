@@ -1,6 +1,6 @@
 import type { HyperProtocolName, HyperPlugin, HyperTransport, HyperClientOptions, HyperProtocols, UniversalResponse, HyperServerListenOptions, TransportServer } from "@hyperttp/types";
 import { RequestBuilder, type ResponseType } from "../Utils/RequestBuilder.js";
-import type { HttpMethod, RestRequestOptions } from "@hyperttp/core/rest";
+import type { HttpMethod, RestRequestOptions } from "@hyperttp/protocol-rest";
 import { type HyperServer, type ServerOptions } from "../Server/HyperServer.js";
 export type ShortcutRequestOptions = RestRequestOptions & {
     responseType?: ResponseType;
@@ -108,7 +108,8 @@ export declare class HyperClient {
      * @internal Used by RequestBuilder to bypass the public API double-pass
      */
     _execute<T>(method: HttpMethod, url: string, options?: RestRequestOptions, signal?: AbortSignal, metadata?: Record<string, unknown>): Promise<T>;
-    /** Creates a REST server facade without opening a port. Services remain application-owned. */
+    /** Creates a server facade without opening a port. Services remain application-owned. */
+    server<S = Record<never, never>>(options: ServerOptions<S>): HyperServer<S>;
     server<S = Record<never, never>>(port: number, options?: Omit<ServerOptions<S>, "port">): HyperServer<S>;
     /**
      * @ru Запускает REST-сервер.

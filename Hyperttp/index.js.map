@@ -2,6 +2,6 @@
   "version": 3,
   "sources": ["../../src/Hyperttp/index.ts"],
   "sourcesContent": ["export { HyperClient } from \"./Client/HyperClient.js\";\nexport type { ShortcutRequestOptions } from \"./Client/HyperClient.js\";\nexport { default as Request } from \"./Request.js\";\nexport { PreparedRequest } from \"./Request.js\";\nexport { default as UrlExtractor } from \"./UrlExtractor.js\";\nexport * from \"./Utils/index.js\";\n\nexport { HyperServer, createServer } from \"./Server/HyperServer.js\";\nexport type {\n  RouteParams,\n  RouteContext,\n  RouteHandler,\n  ServerMiddleware,\n  ServerOptions,\n} from \"./Server/HyperServer.js\";\n"],
-  "mappings": "aAAA,OAAS,gBAAmB,0BAE5B,OAAS,WAAW,YAAe,eACnC,OAAS,oBAAuB,eAChC,OAAS,WAAW,iBAAoB,oBACxC,WAAc,mBAEd,OAAS,YAAa,iBAAoB",
-  "names": []
+  "mappings": "AAAA,OAAS,eAAAA,MAAmB,0BAE5B,OAAoB,WAAXC,MAA0B,eACnC,OAAS,mBAAAC,MAAuB,eAChC,OAAoB,WAAXD,MAA+B,oBACxC,WAAc,mBAEd,OAAS,eAAAE,EAAa,gBAAAC,MAAoB",
+  "names": ["HyperClient", "default", "PreparedRequest", "HyperServer", "createServer"]
 }

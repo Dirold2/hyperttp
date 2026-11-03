@@ -1,4 +1,4 @@
-import type { HttpMethod } from "@hyperttp/core/rest";
+import type { HttpMethod } from "@hyperttp/protocol-rest";
 import { HyperClient } from "../Client/HyperClient.js";
 import type { RequestQuery } from "./query.js";
 export type ResponseType = "json" | "text" | "xml" | "html" | "buffer" | "stream";

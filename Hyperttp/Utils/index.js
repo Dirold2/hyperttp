@@ -1,2 +1,2 @@
-"use strict";export{RequestBuilder}from"./RequestBuilder.js";export{appendQueryToUrl}from"./query.js";
+import{RequestBuilder as o}from"./RequestBuilder.js";import{appendQueryToUrl as t}from"./query.js";export{o as RequestBuilder,t as appendQueryToUrl};
 //# sourceMappingURL=index.js.map

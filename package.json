@@ -1,12 +1,31 @@
 {
   "name": "hyperttp",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
+  "keywords": [
+    "bun",
+    "cache",
+    "client",
+    "cookies",
+    "deno",
+    "fetch",
+    "http",
+    "hyperttp",
+    "isomorphic",
+    "logger",
+    "queue",
+    "rate-limit",
+    "retry",
+    "undici"
+  ],
+  "license": "MIT",
+  "author": "dirold2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dirold2/hyperttp.git"
+  },
   "type": "module",
   "sideEffects": false,
-  "engines": {
-    "node": ">=22.19.0"
-  },
   "main": "./index.js",
   "types": "./index.d.ts",
   "exports": {
@@ -15,42 +34,24 @@
       "import": "./index.js"
     }
   },
-  "keywords": [
-    "http",
-    "client",
-    "fetch",
-    "undici",
-    "cache",
-    "rate-limit",
-    "queue",
-    "retry",
-    "cookies",
-    "logger",
-    "bun",
-    "deno",
-    "isomorphic",
-    "hyperttp"
-  ],
-  "author": "dirold2",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Dirold2/hyperttp.git"
-  },
   "dependencies": {
-    "@hyperttp/auth": "^3.0.0",
-    "@hyperttp/cache": "^3.0.0",
-    "@hyperttp/core": "^3.0.2",
-    "@hyperttp/crypto": "^3.0.0",
-    "@hyperttp/inflight": "^3.0.1",
-    "@hyperttp/interceptors": "^3.0.0",
-    "@hyperttp/metrics": "^3.0.0",
-    "@hyperttp/parser": "^3.0.2",
-    "@hyperttp/queue": "^3.0.1",
-    "@hyperttp/ratelimit": "^3.0.0",
-    "@hyperttp/retry": "^3.0.0",
-    "@hyperttp/serializer": "^3.0.0",
-    "@hyperttp/types": "^0.5.0"
+    "@hyperttp/auth": "^3.0.1",
+    "@hyperttp/cache": "^3.0.1",
+    "@hyperttp/core": "^3.0.3",
+    "@hyperttp/crypto": "^3.0.1",
+    "@hyperttp/inflight": "^3.0.2",
+    "@hyperttp/interceptors": "^3.0.1",
+    "@hyperttp/metrics": "^3.0.2",
+    "@hyperttp/parser": "^3.0.3",
+    "@hyperttp/queue": "^3.0.2",
+    "@hyperttp/ratelimit": "^3.0.1",
+    "@hyperttp/retry": "^3.0.1",
+    "@hyperttp/serializer": "^3.0.1",
+    "@hyperttp/types": "^0.5.3",
+    "@hyperttp/protocol-rest": "^0.1.1"
   },
-  "private": false
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "private": true
 }
