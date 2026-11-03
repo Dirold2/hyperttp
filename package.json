@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "type": "module",
   "sideEffects": false,
@@ -38,7 +38,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dirold2/hyperttp.git"
+    "url": "git+https://github.com/Dirold2/hyperttp.git"
   },
   "dependencies": {
     "@hyperttp/auth": "^3.0.0",
