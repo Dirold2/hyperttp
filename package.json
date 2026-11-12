@@ -57,7 +57,7 @@
   "dependencies": {
     "@hyperttp/auth": "^3.0.2",
     "@hyperttp/cache": "^3.0.2",
-    "@hyperttp/core": "^3.0.5",
+    "@hyperttp/core": "^3.0.6",
     "@hyperttp/crypto": "^3.0.2",
     "@hyperttp/inflight": "^3.0.3",
     "@hyperttp/interceptors": "^3.0.2",
@@ -68,7 +68,7 @@
     "@hyperttp/retry": "^3.0.2",
     "@hyperttp/serializer": "^3.0.2",
     "@hyperttp/types": "^0.5.4",
-    "@hyperttp/protocol-rest": "^0.1.1"
+    "@hyperttp/protocol-rest": "^0.1.2"
   },
   "devDependencies": {
     "@dirold2/dev-tools": "^1.1.3",
