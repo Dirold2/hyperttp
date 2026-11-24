@@ -74,7 +74,7 @@
   "devDependencies": {
     "@dirold2/dev-tools": "^1.1.3",
     "@hyperttp/protocol-grpc": "^0.2.3",
-    "@hyperttp/protocol-webrtc": "^0.3.1",
+    "@hyperttp/protocol-webrtc": "^0.3.2",
     "@hyperttp/transport-webrtc": "^0.4.6",
     "@types/node": "^26.6.6",
     "@vitest/coverage-v8": "^5.1.1",
