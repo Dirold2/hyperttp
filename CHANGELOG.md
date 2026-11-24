@@ -1,4 +1,27 @@
+## Unreleased
+
+### Added
+
+- Added `http2` automatic transport selection for REST and gRPC; its public typing is contributed by the applicable runtime transport package.
+
+### Changed
+
+- `hyperttp` now installs `@hyperttp/transport-node` in production, preserving zero-configuration Node and Deno gRPC/HTTP/2 resolution while `@hyperttp/core` stays transport-agnostic.
+
 # Changelog
+
+## [0.7.6] - 2026-11-24
+
+### Added
+
+- A single HTTP/2 listener can serve REST and one external protocol through `HyperServer`.
+- Added the public gRPC facade: `server.grpc.handle(...)`.
+- Added the REST-only WebRTC facade: `server.webrtc.signal(...)`.
+- Added integration tests for shared REST + gRPC and REST + WebRTC listeners.
+
+### Changed
+
+- Documentation now describes sharing one listener between REST and an external protocol.
 
 ## [0.7.0] - 2026-11-03
 

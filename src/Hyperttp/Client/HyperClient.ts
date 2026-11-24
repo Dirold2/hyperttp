@@ -334,11 +334,14 @@ export class HyperClient {
   public listen<P extends HyperProtocolName>(
     options: Omit<HyperServerListenOptions<"rest">, "protocol"> | HyperServerListenOptions<P>,
   ): Promise<TransportServer> {
-    if ("protocol" in options) {
-      return this._engine.listen(options);
+    if ("protocol" in options || "protocols" in options) {
+      return this._engine.listen(options as HyperServerListenOptions<P>);
     }
 
-    return this._engine.listen({ ...options, protocol: "rest" });
+    return this._engine.listen({
+      ...options,
+      protocol: "rest",
+    } as HyperServerListenOptions<"rest">);
   }
 
   private executeShortcut<T>(

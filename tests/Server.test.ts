@@ -1,4 +1,10 @@
+import { createServer as createTcpServer } from "node:net";
+import type { AddressInfo } from "node:net";
+import { GrpcProtocol, encodeGrpcFrame } from "@hyperttp/protocol-grpc";
+import { WebRtcProtocol } from "@hyperttp/protocol-webrtc";
 import { RestProtocol } from "@hyperttp/protocol-rest";
+import type { WebRtcSignalingHandler, WebRtcTransport } from "@hyperttp/transport-webrtc";
+import { Http2Transport } from "@hyperttp/transport-node";
 import { describe, expect, it, vi } from "vitest";
 import type {
   AnyHyperProtocol,
@@ -33,6 +39,19 @@ function fixture(receivers: AnyHyperReceiver[] = [], protocols: AnyHyperProtocol
     );
   };
   return { core, listen, close, request };
+}
+
+async function getAvailablePort(): Promise<number> {
+  const server = createTcpServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address() as AddressInfo;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  return address.port;
 }
 
 describe("optional server facade", () => {
@@ -247,9 +266,10 @@ declare module "@hyperttp/types" {
 describe("external server facade", () => {
   it("loads a protocol-owned namespace and injects typed services", async () => {
     const factory = vi.fn();
-    const { core, listen, close } = fixture(
+    const { core, listen, close, request } = fixture(
       [],
       [
+        RestProtocol,
         {
           protocol: "test-server",
           receiver: {
@@ -286,9 +306,9 @@ describe("external server facade", () => {
         reply: injected.prefix + request.message,
       })),
     ).toBe(server);
-    expect(() => server.rest.get("/", () => ({}))).toThrow("separate server facades");
-    expect(() => server.use((_ctx, next) => next())).toThrow();
+    server.rest.get("/health", () => ({ body: "ok" }));
     await server.start();
+    expect(new TextDecoder().decode((await request("/health")).body as Uint8Array)).toEqual("ok");
     const options = listen.mock.calls[0]![0];
     const response = await options.onRequest!({
       protocol: "test-server",
@@ -305,5 +325,98 @@ describe("external server facade", () => {
     expect(close).toHaveBeenCalledTimes(1);
     expect(services.close).not.toHaveBeenCalled();
     await core.destroy();
+  });
+});
+
+describe("WebRTC REST signaling facade", () => {
+  it("registers one application-owned signaling handler on the REST listener", async () => {
+    const { core, listen, request } = fixture([], [RestProtocol, WebRtcProtocol]);
+    const services = { token: "trusted", close: vi.fn() };
+    const signaling: WebRtcSignalingHandler = {
+      handle: vi.fn(async () => ({ status: 204, headers: {}, body: "" })),
+      close: vi.fn(async () => {}),
+      closeServerSession: vi.fn(async () => {}),
+    };
+    let signalingOptions: TransportListenOptions | undefined;
+    const transport = {
+      createSignalingHandler: vi.fn((options: TransportListenOptions) => {
+        signalingOptions = options;
+        return signaling;
+      }),
+    } as unknown as WebRtcTransport;
+    const server = core.server({ port: 0, services });
+
+    expect(
+      server.webrtc.signal("/signal", {
+        transport,
+        authorize: ({ request, services: injected }) =>
+          request.headers.authorization === injected.token,
+      }),
+    ).toBe(signaling);
+    expect(transport.createSignalingHandler).toHaveBeenCalledTimes(1);
+
+    await server.start();
+    expect(listen).toHaveBeenCalledWith(
+      expect.objectContaining({ onRequest: expect.any(Function) }),
+    );
+    expect((await request("/signal", "POST")).status).toBe(204);
+    expect(signaling.handle).toHaveBeenCalledWith(
+      expect.objectContaining({ protocol: "webrtc", method: "POST", url: "/signal" }),
+    );
+    expect(
+      await signalingOptions?.signaling?.authorize?.({
+        protocol: "webrtc",
+        method: "POST",
+        url: "/signal",
+        headers: { authorization: "trusted" },
+      }),
+    ).toBe(true);
+
+    await server.close();
+    expect(signaling.close).not.toHaveBeenCalled();
+    expect(services.close).not.toHaveBeenCalled();
+    await core.destroy();
+  });
+});
+
+describe("REST and gRPC HTTP/2 listener", () => {
+  it("serves framed gRPC responses and trailers alongside REST", async () => {
+    const port = await getAvailablePort();
+    const serverTransport = new Http2Transport();
+    const core = new HyperClient(
+      { builtInPlugins: false, customTransport: serverTransport, protocols: [GrpcProtocol] },
+      serverTransport,
+    );
+    const server = core.server({ host: "127.0.0.1", port });
+    server.rest.get("/health", () => ({ body: "ok" }));
+    server.grpc.handle(({ request }) => ({ body: request.message }));
+    const client = new Http2Transport({ baseUrl: `http://127.0.0.1:${port}` });
+
+    try {
+      await server.start();
+      const rest = await client.execute({
+        method: "GET",
+        url: "/health",
+        protocol: "rest",
+        headers: {},
+      });
+      expect(new TextDecoder().decode(rest.body as Uint8Array)).toBe("ok");
+
+      const payload = new Uint8Array([10, 20, 30]);
+      const grpc = await client.execute({
+        method: "POST",
+        url: "/example.Echo/Unary",
+        protocol: "grpc",
+        headers: { "content-type": "application/grpc", te: "trailers" },
+        body: encodeGrpcFrame(payload),
+      });
+      expect(grpc.headers["content-type"]).toBe("application/grpc");
+      expect(new Uint8Array(grpc.body as Uint8Array)).toEqual(encodeGrpcFrame(payload));
+      expect(grpc.trailers?.["grpc-status"]).toBe("0");
+    } finally {
+      await client.destroy();
+      await server.close();
+      await core.destroy();
+    }
   });
 });

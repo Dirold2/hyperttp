@@ -597,8 +597,27 @@ Matching чувствителен к регистру и trailing slash; static 
 Ошибочная percent-encoding в matched params возвращает 400 до route middleware.
 
 Core server hooks оборачивают facade; клиентский auth/cache не является входящей защитой.
-Используйте middleware или серверные hooks. Facade пока REST-only: server API WebRTC
-не выводится из клиентских методов автоматически.
+Используйте middleware или серверные hooks. REST-маршруты можно использовать вместе с
+одним внешним protocol endpoint на одном listener-е, если transport поддерживает оба
+протокола. Например, `Http2Transport` обслуживает REST и gRPC через Node HTTP/2.
+Зарегистрируйте REST routes и `.handle(...)` внешнего protocol до `start()`; Core выбирает
+обработчик по входящему протоколу.
+
+### Выбор HTTP/2 транспорта
+
+`http2` добавляется в `HyperClientOptions` runtime-пакетом транспорта. До настройки клиента импортируйте пакет, который предоставляет выбранный HTTP/2 transport; для Node.js и общего REST + gRPC listener-а в Bun используйте `@hyperttp/transport-node`:
+
+```ts
+import "@hyperttp/transport-node";
+
+const client = new HyperClient({ http2: true });
+```
+
+В Deno используйте `@hyperttp/transport-deno` для нативного REST и расширения типов. Для gRPC или общего REST + gRPC listener-а автоматический выбор загружает `Http2Transport` из `@hyperttp/transport-node`; пакет `hyperttp` устанавливает его в production, а пользователи прямого HyperCore должны установить его сами. Это оставляет transport-специфичную конфигурацию вне базового пакета `@hyperttp/types`.
+
+Опция наследуется через `client.extend(...)` и действует на
+`client.server(...).start()` / `client.listen(...)`. Она выбирает нативный HTTP/2 transport для REST и gRPC, не заменяя и не изменяя Node `globalThis.fetch`: код с глобальным fetch продолжает использовать свой dispatcher.
+Для специальных TLS-настроек HTTP/2 передайте явный `customTransport`.
 
 ## Лицензия
 

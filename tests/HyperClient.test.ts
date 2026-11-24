@@ -1,3 +1,4 @@
+import "@hyperttp/transport-node";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { HyperClient, RequestBuilder, type HyperTransport } from "../src/index.js";
@@ -67,6 +68,18 @@ describe("HyperClient", () => {
 
   afterAll(async () => {
     await client.destroy();
+  });
+
+  it("uses and inherits an HTTP/2 transport when configured", async () => {
+    const http2Client = new HyperClient({ http2: true, builtInPlugins: false });
+    const derivedClient = http2Client.extend({});
+    try {
+      expect(await http2Client.getTransportName()).toBe("Http2Transport");
+      expect(await derivedClient.getTransportName()).toBe("Http2Transport");
+    } finally {
+      await derivedClient.destroy();
+      await http2Client.destroy();
+    }
   });
 
   it.each(["enabled", "disabled", "no-builtins", "post"] as const)(

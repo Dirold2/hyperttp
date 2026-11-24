@@ -634,7 +634,11 @@ Then `client.server({ port, services }).example.handle(...)` has inferred reques
 response and DI types. Module augmentation alone only declares types; registering
 the protocol supplies the implementation. Namespace names must match protocol
 identifiers and must not shadow built-in server members (`rest`, `start`, `close`,
-`use`, etc.). Each facade supports one external endpoint or REST routes, not both.
+`use`, etc.). A facade may serve REST plus one external endpoint from one listener;
+the shared transport must support both protocols. For example, `Http2Transport`
+serves REST and gRPC over Node HTTP/2. Register REST routes and the external
+`.handle(...)` endpoint before `start()`; dispatch is selected from the incoming
+protocol, not from a REST route.
 
 WebRTC-specific server types now come from `@hyperttp/protocol-webrtc` rather
 than `hyperttp`; the `.webrtc.signal(...)` call shape is unchanged.
@@ -646,3 +650,19 @@ Their existing `hyperttp` exports remain available for compatibility.
 REST is provided by the direct dependency `@hyperttp/protocol-rest`, automatically
 registered by HyperClient. Direct HyperCore users must register RestProtocol explicitly.
 Import REST-specific types from `@hyperttp/protocol-rest`.
+
+### HTTP/2 transport selection
+
+`http2` is contributed to `HyperClientOptions` by a runtime transport package. Import the package that provides the selected HTTP/2 transport before configuring the client; for Node.js and Bun shared REST + gRPC listeners, use `@hyperttp/transport-node`:
+
+```ts
+import "@hyperttp/transport-node";
+
+const client = new HyperClient({ http2: true });
+```
+
+Use `@hyperttp/transport-deno` in Deno for native REST and the type augmentation. For gRPC or a shared REST + gRPC listener, automatic selection loads `Http2Transport` from `@hyperttp/transport-node`; `hyperttp` installs it in production, while direct HyperCore users must install it themselves. This keeps transport-specific configuration out of the base `@hyperttp/types` package.
+
+The setting is inherited by `client.extend(...)` and applies to
+`client.server(...).start()` / `client.listen(...)`. It selects the native HTTP/2 transport for REST and gRPC without replacing or modifying Node's `globalThis.fetch`; code that calls global fetch still uses its own dispatcher.
+Use an explicit `customTransport` when the HTTP/2 transport needs custom TLS options.

@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "keywords": [
     "bun",
@@ -55,34 +55,38 @@
     "clean": "node --input-type=module -e 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true });'"
   },
   "dependencies": {
-    "@hyperttp/auth": "^3.0.2",
-    "@hyperttp/cache": "^3.0.2",
-    "@hyperttp/core": "^3.0.6",
-    "@hyperttp/crypto": "^3.0.2",
-    "@hyperttp/inflight": "^3.0.3",
-    "@hyperttp/interceptors": "^3.0.2",
-    "@hyperttp/metrics": "^3.0.3",
-    "@hyperttp/parser": "^3.0.4",
-    "@hyperttp/queue": "^3.0.3",
-    "@hyperttp/ratelimit": "^3.0.2",
-    "@hyperttp/retry": "^3.0.2",
-    "@hyperttp/serializer": "^3.0.2",
-    "@hyperttp/types": "^0.5.4",
-    "@hyperttp/protocol-rest": "^0.1.2"
+    "@hyperttp/auth": "^3.0.3",
+    "@hyperttp/cache": "^3.0.3",
+    "@hyperttp/core": "^3.0.7",
+    "@hyperttp/crypto": "^3.0.3",
+    "@hyperttp/inflight": "^3.0.4",
+    "@hyperttp/interceptors": "^3.0.3",
+    "@hyperttp/metrics": "^3.0.4",
+    "@hyperttp/parser": "^3.0.5",
+    "@hyperttp/queue": "^3.0.4",
+    "@hyperttp/ratelimit": "^3.0.3",
+    "@hyperttp/retry": "^3.0.3",
+    "@hyperttp/serializer": "^3.0.3",
+    "@hyperttp/types": "^0.5.5",
+    "@hyperttp/protocol-rest": "^0.1.3",
+    "@hyperttp/transport-node": "^0.1.2"
   },
   "devDependencies": {
     "@dirold2/dev-tools": "^1.1.3",
+    "@hyperttp/protocol-grpc": "^0.2.3",
+    "@hyperttp/protocol-webrtc": "^0.3.1",
+    "@hyperttp/transport-webrtc": "^0.4.6",
     "@types/node": "^26.6.6",
-    "@vitest/coverage-v8": "^5.1.0",
+    "@vitest/coverage-v8": "^5.1.1",
     "chalk": "^6.0.1",
     "dotenv-cli": "^11.1.0",
     "esbuild": "^0.28.2",
     "jiti": "^2.7.0",
-    "oxfmt": "^0.78.0",
-    "oxlint": "^1.93.0",
+    "oxfmt": "^0.80.0",
+    "oxlint": "^1.95.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "engines": {
     "node": ">=22.19.0"

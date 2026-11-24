@@ -7,6 +7,7 @@ import type {
   ServerMiddleware,
   ServerOptions,
   RouteContext,
+  RestRouteMethod,
   ServerRequestContext,
   TransportServer,
 } from "@hyperttp/types";
@@ -22,6 +23,18 @@ export type {
 } from "@hyperttp/types";
 
 type Segment = { literal: string } | { param: string };
+type ProtocolEndpoint = {
+  protocol: HyperProtocolName;
+  options: Omit<
+    HyperServerListenOptions,
+    "protocol" | "protocols" | "handler" | "port" | "host" | "signal"
+  >;
+  handler: ProtocolHandler;
+};
+type ProtocolHandler = (
+  request: unknown,
+  context: ServerRequestContext,
+) => unknown | Promise<unknown>;
 type Route<Services> = {
   method: HttpMethod;
   segments: Segment[];
@@ -52,7 +65,7 @@ export type HyperServer<Services = Record<never, never>> = HyperServerImplementa
 
 /** Optional protocol server facade. Constructing it never opens a port. */
 class HyperServerImplementation<Services = Record<never, never>> {
-  private protocolEndpoint?: () => Promise<TransportServer>;
+  private protocolEndpoint?: ProtocolEndpoint;
   private readonly protocolFacades = new Map<string, object>();
   private readonly routes: Route<Services>[] = [];
   private readonly middleware: ServerMiddleware<Services>[] = [];
@@ -92,6 +105,8 @@ class HyperServerImplementation<Services = Record<never, never>> {
     const host: ProtocolServerHost<Services, HyperServer<Services>> = {
       services: this.services,
       configure: (options) => this.configureProtocol(options),
+      registerRestRoutes: (methods, path, handler) =>
+        this.registerRestRoutes(methods, path, handler),
     };
     const facade = factory(host);
     this.protocolFacades.set(name, facade);
@@ -102,18 +117,22 @@ class HyperServerImplementation<Services = Record<never, never>> {
     options: Omit<HyperServerListenOptions<P>, "port" | "host" | "signal">,
   ): HyperServer<Services> {
     this.assertConfiguring();
-    if (this.routes.length || this.middleware.length)
-      throw new Error("[HyperServer] REST and external protocols require separate server facades.");
     if (this.protocolEndpoint)
       throw new Error("[HyperServer] Only one protocol endpoint per server is supported.");
-    const listener = { ...options };
-    this.protocolEndpoint = () =>
-      this.core.listen({
-        ...listener,
-        port: this.options.port,
-        host: this.options.host,
-        signal: this.options.signal,
-      });
+    if (!options.protocol)
+      throw new Error("[HyperServer] Protocol server facades must configure one protocol.");
+    const { protocol, protocols: _protocols, handler, ...listener } = options;
+    this.protocolEndpoint = {
+      protocol,
+      options: listener,
+      handler: handler
+        ? (handler as ProtocolHandler)
+        : (request, context) => {
+            const receiver = this.core.getProtocol(protocol)?.receiver;
+            if (!receiver) throw new Error(`[HyperServer] Protocol "${protocol}" has no receiver.`);
+            return receiver.handle(request, context);
+          },
+    };
     return this.facade;
   }
 
@@ -162,36 +181,41 @@ class HyperServerImplementation<Services = Record<never, never>> {
     path: P,
     handler: RouteHandler<Services, P>,
   ): HyperServer<Services> {
+    return this.registerRestRoutes([method], path, handler);
+  }
+
+  private registerRestRoutes<P extends string>(
+    methods: readonly RestRouteMethod[],
+    path: P,
+    handler: RouteHandler<Services, P>,
+  ): HyperServer<Services> {
     this.assertConfiguring();
-    if (this.protocolEndpoint)
-      throw new Error("[HyperServer] REST and external protocols require separate server facades.");
     const segments = parsePath(path);
-    if (
-      this.routes.some(
-        (route) =>
-          route.method === method &&
-          route.segments.length === segments.length &&
-          route.segments.every((segment, i) => {
-            const other = segments[i]!;
-            return "literal" in segment
-              ? "literal" in other && segment.literal === other.literal
-              : "param" in other;
-          }),
-      )
-    ) {
-      throw new Error("[HyperServer] Duplicate route pattern for this method.");
+    for (const method of methods) {
+      if (
+        this.routes.some(
+          (route) =>
+            route.method === method &&
+            route.segments.length === segments.length &&
+            route.segments.every((segment, i) => {
+              const other = segments[i]!;
+              return "literal" in segment
+                ? "literal" in other && segment.literal === other.literal
+                : "param" in other;
+            }),
+        )
+      ) {
+        throw new Error("[HyperServer] Duplicate route pattern for this method.");
+      }
     }
-    // The matcher constructs exactly the named parameters of this registered path.
-    this.routes.push({ method, segments, handler: handler as RouteHandler<Services> });
+    for (const method of methods) {
+      this.routes.push({ method, segments, handler: handler as RouteHandler<Services> });
+    }
     return this.facade;
   }
 
   use(middleware: ServerMiddleware<Services>): HyperServer<Services> {
     this.assertConfiguring();
-    if (this.protocolEndpoint)
-      throw new Error(
-        "[HyperServer] REST middleware cannot be used with an external protocol facade.",
-      );
     this.middleware.push(middleware);
     return this.facade;
   }
@@ -270,8 +294,19 @@ class HyperServerImplementation<Services = Record<never, never>> {
     }
     if (this.startup) return this.startup;
     this.state = "starting";
-    const startup = this.protocolEndpoint
-      ? this.protocolEndpoint()
+    const endpoint = this.protocolEndpoint;
+    const startup = endpoint
+      ? this.core.listen({
+          ...endpoint.options,
+          protocols: ["rest", endpoint.protocol],
+          port: this.options.port,
+          host: this.options.host,
+          signal: this.options.signal,
+          handler: (request, context) =>
+            context.protocol === "rest"
+              ? this.handle(request as RestServerInput, context)
+              : endpoint.handler(request, context),
+        })
       : this.core.listen({
           protocol: "rest",
           port: this.options.port,
