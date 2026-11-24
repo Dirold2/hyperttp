@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "keywords": [
     "bun",
@@ -38,7 +38,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tests/http2-options.tsconfig.json",
     "lint": "oxlint src tests vitest.config.ts",
     "lint:fix": "oxlint src tests vitest.config.ts --fix",
     "format": "oxfmt src tests vitest.config.ts",

@@ -9,15 +9,21 @@ export type { HyperClientOptions, HyperTransport, UniversalResponse } from "@hyp
 
 export type * from "./Types/index.js";
 
+export * from "@hyperttp/auth";
 export * from "@hyperttp/cache";
 export * from "@hyperttp/queue";
 export * from "@hyperttp/ratelimit";
+export * from "@hyperttp/retry";
 export * from "@hyperttp/interceptors";
 export * from "@hyperttp/metrics";
 export * from "@hyperttp/inflight";
 export * from "@hyperttp/parser";
 export * from "@hyperttp/serializer";
 export * from "@hyperttp/crypto";
+export * from "@hyperttp/core";
+export * from "@hyperttp/protocol-rest";
+export { HyperClientError, TimeoutError } from "@hyperttp/protocol-rest";
+export * from "@hyperttp/transport-node";
 
 export { HyperServer, createServer } from "./Hyperttp/Server/HyperServer.js";
 export type {
