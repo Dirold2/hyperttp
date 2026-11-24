@@ -57,7 +57,7 @@
   "dependencies": {
     "@hyperttp/auth": "^3.0.3",
     "@hyperttp/cache": "^3.0.3",
-    "@hyperttp/core": "^3.0.8",
+    "@hyperttp/core": "link:@hyperttp/core",
     "@hyperttp/crypto": "^3.0.3",
     "@hyperttp/inflight": "^3.0.4",
     "@hyperttp/interceptors": "^3.0.3",

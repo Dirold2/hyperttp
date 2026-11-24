@@ -7,7 +7,7 @@
       "dependencies": {
         "@hyperttp/auth": "^3.0.3",
         "@hyperttp/cache": "^3.0.3",
-        "@hyperttp/core": "^3.0.8",
+        "@hyperttp/core": "link:@hyperttp/core",
         "@hyperttp/crypto": "^3.0.3",
         "@hyperttp/inflight": "^3.0.4",
         "@hyperttp/interceptors": "^3.0.3",
@@ -115,7 +115,7 @@
 
     "@hyperttp/cache": ["@hyperttp/cache@3.0.3", "", { "peerDependencies": { "@hyperttp/types": "^0.5.5", "hcacher": "^0.3.1" } }, "sha512-hD25VhQRIdZaLXvCDR5xdu7/71gCgMvXpaZxrMP0wHAijw3G51o2oRJ47ZS4IaObzsyI/8ClLKERju4UGr11aw=="],
 
-    "@hyperttp/core": ["@hyperttp/core@3.0.8", "", { "peerDependencies": { "@hyperttp/transport-bun": "^0.4.3", "@hyperttp/transport-deno": "^0.1.3", "@hyperttp/transport-node": "^0.1.2", "@hyperttp/transport-undici": "^0.4.4", "@hyperttp/transport-webrtc": "^0.4.6", "@hyperttp/types": "^0.5.5" }, "optionalPeers": ["@hyperttp/transport-bun", "@hyperttp/transport-deno", "@hyperttp/transport-node", "@hyperttp/transport-undici", "@hyperttp/transport-webrtc"] }, "sha512-Hn75oLbI5LIvxpWeih0/QE/VG5YZA8wjzMFKe3BxQ1UjbxNhwSRlQuO7SZ4j6IP1TBarlJOwtHlSMu5HAXvA6A=="],
+    "@hyperttp/core": ["@hyperttp/core@link:@hyperttp/core", {}],
 
     "@hyperttp/crypto": ["@hyperttp/crypto@3.0.3", "", { "peerDependencies": { "@hyperttp/types": "^0.5.5" } }, "sha512-/2Dc0ivJrYaQyRFIttvpC5xqiDrQMMhcrVE3piA9IHpt61P7Y/5MFlJbqoC745O+fW8ce5jdm2G04L+vbWHx3w=="],
 
