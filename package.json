@@ -1,6 +1,6 @@
 {
   "name": "hyperttp",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "A high-performance, universal HTTP client for Node.js, Bun, Deno and Browser with caching, retries, queueing, rate limiting, cookies and logging.",
   "keywords": [
     "bun",
@@ -57,7 +57,7 @@
   "dependencies": {
     "@hyperttp/auth": "^3.0.3",
     "@hyperttp/cache": "^3.0.3",
-    "@hyperttp/core": "^3.0.7",
+    "@hyperttp/core": "^3.0.8",
     "@hyperttp/crypto": "^3.0.3",
     "@hyperttp/inflight": "^3.0.4",
     "@hyperttp/interceptors": "^3.0.3",
