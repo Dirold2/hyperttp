@@ -23,7 +23,7 @@ export * from "@hyperttp/crypto";
 export * from "@hyperttp/core";
 export * from "@hyperttp/protocol-rest";
 export { HyperClientError, TimeoutError } from "@hyperttp/protocol-rest";
-export * from "@hyperttp/transport-node";
+import type {} from "@hyperttp/transport-node";
 
 export { HyperServer, createServer } from "./Hyperttp/Server/HyperServer.js";
 export type {
