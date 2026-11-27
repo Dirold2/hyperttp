@@ -1,27 +1,65 @@
-## Unreleased
+# Changelog
+
+## [0.7.10] - 2026-11-27
 
 ### Added
 
-- Added `http2` automatic transport selection for REST and gRPC; its public typing is contributed by the applicable runtime transport package.
+- Added automatic HTTP/2 transport selection for REST and gRPC through the `http2: true` client option.
+- Added a dedicated `d-esbuild` script for JavaScript minification.
+- Added a `clean:maps` script to remove generated source maps from the distribution.
 
 ### Changed
 
-- `hyperttp` now installs `@hyperttp/transport-node` in production, preserving zero-configuration Node and Deno gRPC/HTTP/2 resolution while `@hyperttp/core` stays transport-agnostic.
+- Updated `@hyperttp/core` from `^3.0.9` to `^3.1.2`.
+- Reworked the build pipeline: clean `dist`, compile TypeScript, minify JavaScript, run `d-build`, and remove generated source maps.
+- Simplified build configuration by separating compilation, minification, packaging, and cleanup into explicit steps.
+- Refreshed `bun.lock` for the updated dependency tree.
 
-# Changelog
+## [0.7.9] - 2026-11-24
+
+### Added
+
+- Re-exported authentication APIs from `@hyperttp/auth`.
+- Re-exported retry APIs from `@hyperttp/retry`.
+- Re-exported HyperCore APIs from `@hyperttp/core`.
+- Re-exported REST protocol APIs from `@hyperttp/protocol-rest`.
+- Re-exported Node transport APIs from `@hyperttp/transport-node`.
+- Exported `HyperClientError` and `TimeoutError` directly from the package root.
+- Added a dedicated TypeScript configuration check for HTTP/2 client options.
+- Added type coverage verifying that `HyperClientOptions` accepts `http2: true`.
+
+### Changed
+
+- Extended the `typecheck` script to include HTTP/2 option declarations.
+
+## [0.7.8] - 2026-11-24
+
+### Changed
+
+- Updated `@hyperttp/core` from `^3.0.8` to `^3.0.9`.
+- Restored the published npm dependency reference for `@hyperttp/core` instead of the temporary local workspace link.
+- Refreshed `bun.lock`.
+
+## [0.7.7] - 2026-11-24
+
+### Changed
+
+- Updated `@hyperttp/core` from `^3.0.7` to `^3.0.8`.
+- Updated `@hyperttp/protocol-webrtc` from `^0.3.1` to `^0.3.2`.
+- Refreshed `bun.lock` for the updated protocol and Core dependencies.
 
 ## [0.7.6] - 2026-11-24
 
 ### Added
 
-- A single HTTP/2 listener can serve REST and one external protocol through `HyperServer`.
-- Added the public gRPC facade: `server.grpc.handle(...)`.
-- Added the REST-only WebRTC facade: `server.webrtc.signal(...)`.
-- Added integration tests for shared REST + gRPC and REST + WebRTC listeners.
+- Added support for serving REST and one external protocol through a single HTTP/2 listener using `HyperServer`.
+- Added the public gRPC server facade: `server.grpc.handle(...)`.
+- Added the REST-only WebRTC server facade: `server.webrtc.signal(...)`.
+- Added integration tests covering shared REST + gRPC and REST + WebRTC listeners.
 
 ### Changed
 
-- Documentation now describes sharing one listener between REST and an external protocol.
+- Updated documentation to describe sharing a single listener between REST and an external protocol.
 
 ## [0.7.0] - 2026-11-03
 
