@@ -1,8 +1,0 @@
-{
-  "extends": "../tsconfig.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "rootDir": ".."
-  },
-  "include": ["./http2-options.types.ts"]
-}
